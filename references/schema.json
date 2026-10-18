@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "okf_version": "0.2",
+  "paths": {
+    "raw": "raw",
+    "assets": "assets",
+    "wiki": "wiki",
+    "summaries": "wiki/summaries",
+    "entities": "wiki/entities",
+    "concepts": "wiki/concepts",
+    "analyses": "wiki/analyses",
+    "hubs": "wiki/hubs",
+    "logs": "wiki/logs",
+    "index": "wiki/index.md",
+    "overview": "wiki/overview.md"
+  },
+  "required_paths": [
+    "AGENTS.md",
+    "raw",
+    "assets",
+    "wiki",
+    "wiki/summaries",
+    "wiki/entities",
+    "wiki/concepts",
+    "wiki/analyses",
+    "wiki/hubs",
+    "wiki/logs",
+    "wiki/index.md",
+    "wiki/overview.md"
+  ],
+  "document_types": {
+    "exact": {
+      "wiki/overview.md": "overview"
+    },
+    "prefix": {
+      "raw/": "source-material",
+      "wiki/summaries/": "source-summary",
+      "wiki/entities/": "entity",
+      "wiki/concepts/": "concept",
+      "wiki/analyses/": "analysis",
+      "wiki/hubs/": "hub",
+      "wiki/logs/": "operation-log"
+    }
+  },
+  "index_sections": {
+    "wiki/summaries/": "素材来源",
+    "wiki/entities/": "实体",
+    "wiki/concepts/": "概念",
+    "wiki/analyses/": "分析",
+    "wiki/hubs/": "主题聚合"
+  },
+  "link_roots": [
+    "raw",
+    "assets",
+    "wiki"
+  ],
+  "required_sections": {
+    "source-summary": ["摘要", "关键要点"],
+    "entity": ["来源"],
+    "concept": ["来源"]
+  },
+  "limits": {
+    "max_page_lines": 1500,
+    "max_page_bytes": 81920,
+    "max_page_h2": 12,
+    "max_query_read_pages": 8,
+    "max_search_snippet_chars": 240,
+    "max_lint_batch_pages": 200,
+    "max_log_bytes": 102400,
+    "review_after_days": 180,
+    "max_source_bytes": 10485760,
+    "url_timeout_seconds": 30
+  }
+}
