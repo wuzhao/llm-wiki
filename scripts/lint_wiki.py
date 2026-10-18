@@ -172,6 +172,11 @@ def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=Fal
 
     is_raw = relative_path.startswith(f"{schema['paths']['raw']}/")
     is_log = relative_path.startswith(f"{schema['paths']['logs']}/")
+    if is_raw and metadata.get("resource") and metadata.get("source_url") and metadata["resource"] != metadata["source_url"]:
+        issues.append(make_issue(
+            "🟡", "来源地址字段 resource 与 source_url 不一致",
+            "按原始证据核对地址；resource 优先，source_url 仅作旧字段兼容，不自动覆盖或删除", line=1,
+        ))
     if not is_raw and not is_log:
         if not metadata.get("description"):
             issues.append(make_issue("🔵", "Frontmatter 缺少推荐字段 description", "建议补充单句摘要", line=1))

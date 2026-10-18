@@ -39,7 +39,7 @@
 
 - `type` 必填，固定由路径推断为 `source-material`。
 - `title` 用于辨识素材，缺失时 lint 可以安全补齐。
-- `resource`、`source_url`、`source_file_path` 与 `source_file_sha256` 按来源类型选填。
+- `resource` 统一记录来源 URL 或本地文件路径。本地文件另用 `source_file_path` 与 `source_file_sha256` 记录文件位置及校验指纹。
 - `timestamp` 表示采集时间，是 LLM Wiki 自定义字段，不是 OKF 0.2 推荐字段。
 - `source_id`、`source_version`、`supersedes` 分别记录来源身份、版本与前一快照的知识库相对路径；`content_sha256` 用于相同内容提醒，`body_sha256` 用于检测 raw 正文是否改变。
 - URL 的 `source_snapshot` 使用知识库相对路径，指向 `raw/assets/` 中的原始响应；`source_snapshot_sha256` 校验响应字节，`source_media_type`、`source_encoding`、`resolved_url` 与 `extraction_version` 描述提取过程；这些都是本项目扩展。
@@ -77,5 +77,6 @@ stale_after: 2027-03-14T00:00:00Z
 ## 兼容与校验
 
 - 无法解析的 YAML 只报告，不自动重写。
+- `source_url` 是旧 raw 扩展字段，不是 OKF 标准字段。URL 来源身份优先使用 `resource`，未提供 `resource` 时才兼容读取旧 `source_url`；不将本地路径或其他非 URL 的 `resource` 回退为旧 URL。两字段同时存在且值不一致时，lint 报告中等问题，不自动覆盖或删除；历史文件无需批量重写。
 - 旧 wiki 页面中的 `timestamp`、`verified_at` 与 `last_reviewed` 仍可用于陈旧性判断，但新模板不再生成这些字段。
 - profile 的具体 lint 行为见 `lint-policy.md`，路径到 `type` 的映射和 OKF 版本见 `schema.json`。

@@ -49,7 +49,7 @@ URL 获取失败时：
 
 1. 以排他创建方式新建 `raw/` 文件并处理同名冲突（如追加 `-2`），并发写入也不覆盖已有版本。
 2. 从 URL 或正文中提取基础文本与标题。
-3. 按 raw profile 生成可解析 Frontmatter，包含 `type: source-material`、采集 `timestamp` 和可用的来源字段。
+3. 按 raw profile 生成可解析 Frontmatter，包含 `type: source-material`、采集 `timestamp` 和可用的来源字段；来源地址统一写入 `resource`。
 4. 本地文件投喂时，记录 `source_file_path` 与 `source_file_sha256`，供后续 `lint` 发现原始文件在投喂后是否发生变化。
 5. 在标准输出（stdout）返回生成的**绝对文件路径**，供 Agent 接管后续流程。
 6. 记录稳定的 `source_id`、递增的 `source_version`、前一版本 `supersedes`，以及正文与内容指纹。未提供显式身份的粘贴文本按内容识别来源。

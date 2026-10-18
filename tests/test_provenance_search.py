@@ -8,6 +8,7 @@ from pathlib import Path
 from kb_fixture import ROOT, initialize_kb, snapshot, unreadable_directory
 from test_lint_wiki import page
 from wiki_metadata import body_sha256, split_frontmatter
+from wiki_sources import source_identity
 
 
 class ProvenanceSearchTests(unittest.TestCase):
@@ -29,6 +30,22 @@ class ProvenanceSearchTests(unittest.TestCase):
 
     def command(self, script, *args):
         return subprocess.run([sys.executable, str(ROOT / 'scripts' / script), str(self.kb), *args], capture_output=True, text=True)
+
+    def test_url_identity_prefers_resource_and_only_falls_back_when_missing(self):
+        url = 'https://example.com/article'
+        identity = source_identity({'resource': url}, self.kb)
+        self.assertIsNotNone(identity)
+        for metadata in (
+            {'source_url': url},
+            {'resource': '', 'source_url': url},
+            {'resource': url, 'source_url': 'https://example.com/old-article'},
+            {'resource': 'HTTPS://EXAMPLE.COM/article#section'},
+        ):
+            with self.subTest(metadata=metadata):
+                self.assertEqual(source_identity(metadata, self.kb), identity)
+        self.assertEqual(source_identity({
+            'resource': 'original.md', 'source_url': url, 'source_id': 'text:original',
+        }, self.kb), 'text:original')
 
     def test_missing_sources_are_reported_even_when_links_are_valid(self):
         self.write('wiki/concepts/alpha.md', '[[concepts/beta]]')
@@ -78,7 +95,7 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.write('wiki/summaries/summary.md', '42ms', sources=[{'id': 'raw', 'resource': '../../raw/old.md'}])
         self.write('wiki/entities/entity.md', 'A', sources=[{'id': 'summary', 'resource': '../summaries/summary.md'}])
         analysis = self.write('wiki/analyses/result.md', 'Historical answer', sources=[{'id': 'entity', 'resource': '../entities/entity.md'}])
-        self.write('raw/new.md', '99ms', source_url='https://example.com/source', timestamp='2026-02-01T00:00:00Z', supersedes='raw/old.md')
+        self.write('raw/new.md', '99ms', resource='https://example.com/source', timestamp='2026-02-01T00:00:00Z', supersedes='raw/old.md')
         original = analysis.read_bytes()
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/analyses/result.md')
         self.assertIn('来源依赖需要复核', result.stdout)

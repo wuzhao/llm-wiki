@@ -338,6 +338,27 @@ class LintWikiTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(raw.read_bytes(), before)
 
+    def test_raw_source_url_conflicts_are_reported_without_rewriting_fields(self):
+        raw = self.kb / "raw/source.md"
+        resource = "https://example.com/article"
+        for legacy_url in (resource, "https://example.com/old-article"):
+            conflict = legacy_url != resource
+            raw.write_text(markdown({
+                "type": "source-material", "title": "source",
+                "resource": resource, "source_url": legacy_url,
+            }, "# source\n\n原始内容。"))
+            original = raw.read_bytes()
+            for options, status in (
+                ([], 0),
+                (["--fail-on", "warning"], int(conflict)),
+                (["--fix", "--fail-on", "warning"], int(conflict)),
+            ):
+                with self.subTest(legacy_url=legacy_url, options=options):
+                    result = self.run_lint(*options)
+                    self.assertEqual(result.returncode, status, result.stdout + result.stderr)
+                    self.assertEqual("来源地址字段 resource 与 source_url 不一致" in result.stdout, conflict)
+                    self.assertEqual(raw.read_bytes(), original)
+
     def test_raw_missing_frontmatter_keeps_entire_original_body(self):
         raw = self.kb / "raw" / "source.md"
         original = b'# source\r\n\r\n[Original](missing.md)  \r\n\r\n'

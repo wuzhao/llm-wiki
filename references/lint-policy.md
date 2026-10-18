@@ -48,6 +48,7 @@ lint 目标：发现结构、链接、知识关系、冲突和陈旧性问题，
 - 使用 YAML 解析器验证语法，不使用按冒号拆行的近似解析。
 - `wiki/index.md` 按 OKF 0.2 根 index profile 校验，只保留 `okf_version`。
 - 页面字段与 raw 元数据维护遵循 `okf-frontmatter.md` 的各类 profile。
+- raw 同时存在 `resource` 与旧字段 `source_url` 且值不一致时，报告中等问题；不自动覆盖、删除或迁移来源地址字段。
 - wiki 概念文档要求 `type` 为非空字符串，并按 `schema.json` 的路径映射校验和补齐；`title`、`description` 与 `tags` 作为本项目推荐字段检查。
 - 重复键或无法解析的 YAML 只报告，整个文件禁止自动修复，包括链接与 index 条目。可修复字段按解析位置替换，保留未知字段；涉及锚点或别名且无法保证其他字段不变时，保留原文并报告。
 

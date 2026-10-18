@@ -179,13 +179,11 @@ def main():
         
     content = ""
     title = args.title or ""
-    source_url = ""
     source_file_path = ""
     source_file_sha256 = ""
     capture = {}
     
     if args.url:
-        source_url = args.url
         try:
             fetched_content, fetched_title = fetch_url_content(args.url, schema["limits"], capture)
         except (OSError, ValueError, LookupError) as exc:
@@ -226,9 +224,8 @@ def main():
         "title": title,
         "timestamp": now_iso,
     }
-    if source_url:
-        metadata["resource"] = source_url
-        metadata["source_url"] = source_url
+    if args.url:
+        metadata["resource"] = args.url
     if source_file_path:
         metadata["resource"] = source_file_path
         metadata["source_file_path"] = source_file_path

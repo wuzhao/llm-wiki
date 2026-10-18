@@ -11,9 +11,10 @@ from wiki_metadata import content_sha256, parse_datetime, raw_content, split_fro
 
 def source_identity(metadata, kb_dir):
     source_file = metadata.get("source_file_path")
-    url = metadata.get("source_url")
-    if not url and isinstance(metadata.get("resource"), str) and metadata["resource"].startswith(("http:", "https:", "data:")):
-        url = metadata["resource"]
+    resource = metadata.get("resource")
+    url = metadata.get("source_url") if not resource else None
+    if isinstance(resource, str) and resource.lstrip().lower().startswith(("http:", "https:", "data:")):
+        url = resource
     if isinstance(source_file, str) and source_file:
         path = Path(source_file)
         material = "file:" + str((Path(kb_dir) / path).resolve())

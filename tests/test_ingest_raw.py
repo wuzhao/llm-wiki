@@ -58,6 +58,30 @@ class IngestRawTests(unittest.TestCase):
             frontmatter = output_path.read_text(encoding="utf-8").split("---\n", 2)[1]
             metadata = yaml.safe_load(frontmatter)
             self.assertEqual(metadata["resource"], "data:text/plain,raw-profile")
+            self.assertNotIn("source_url", metadata)
+
+    def test_legacy_url_retries_reuse_existing_raw_without_migrating_fields(self):
+        from wiki_metadata import split_frontmatter
+        url = "data:text/plain,legacy-source"
+        for legacy_only in (True, False):
+            with self.subTest(legacy_only=legacy_only), tempfile.TemporaryDirectory() as directory:
+                kb = initialize_kb(directory)
+                first = self.run_ingest(kb, "--url", url, "--title", "legacy")
+                self.assertEqual(first.returncode, 0, first.stderr)
+                raw = Path(first.stdout.strip())
+                _, metadata, body, error = split_frontmatter(raw.read_text())
+                self.assertEqual(error, "")
+                metadata["source_url"] = url
+                if legacy_only:
+                    del metadata["resource"]
+                raw.write_text("---\n" + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip()
+                               + "\n---\n" + body)
+                before = snapshot(kb)
+                duplicate = self.run_ingest(kb, "--url", url, "--title", "new title")
+                self.assertEqual(duplicate.returncode, 0, duplicate.stderr)
+                self.assertEqual(duplicate.stdout, first.stdout)
+                self.assertIn("已有相同内容 ingested", duplicate.stderr)
+                self.assertEqual(snapshot(kb), before)
 
     def test_raw_dir_option_is_not_supported(self):
         with tempfile.TemporaryDirectory() as temp_dir:
