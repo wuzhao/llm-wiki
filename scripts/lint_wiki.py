@@ -23,6 +23,7 @@ from wiki_config import (
     TemplateError,
     index_section_for,
     infer_document_type,
+    is_asset_path,
     load_markdown_template,
     load_schema,
     resolve_within,
@@ -682,11 +683,15 @@ def main():
     missing_lint_roots = [str(path) for path in lint_roots if not path.is_dir()]
     if missing_lint_roots:
         parser.error("lint 目录不存在: " + ", ".join(missing_lint_roots))
+    assets_root = resolve_within(kb_dir, schema["paths"]["assets"])
+    if any(path.is_relative_to(assets_root) for path in lint_roots):
+        parser.error(f"lint 目录不能位于附件目录 {schema['paths']['assets']} 内")
     for path in selected_files:
         relative = path.relative_to(kb_dir).as_posix()
         if (not path.is_file() or path.suffix.casefold() != ".md"
+                or is_asset_path(relative, schema)
                 or not relative.startswith((schema["paths"]["wiki"] + "/", schema["paths"]["raw"] + "/"))):
-            parser.error(f"lint 文件必须是 raw 或 wiki 内已存在的 Markdown 文件: {relative}")
+            parser.error(f"lint 文件必须是 raw 或 wiki 内已存在的 Markdown 文件，附件除外: {relative}")
 
     write_enabled = args.fix and not args.dry_run
     if write_enabled:
@@ -701,12 +706,12 @@ def main():
         report_target = report_path.resolve()
         if (report_path.is_symlink() or is_allowed_target(report_target, target_index)
                 or report_target == kb_dir / "AGENTS.md"):
-            parser.error("报告路径必须位于 raw、assets、wiki 之外，且不能覆盖 AGENTS.md 或符号链接")
+            parser.error("报告路径必须位于 raw、wiki 之外，且不能覆盖 AGENTS.md 或符号链接")
     markdown_files = set(selected_files)
     if args.lint_files:
         markdown_files.add(index_path)
     for root in lint_roots:
-        for path in walk_visible_files(root, scan_errors, kb_dir):
+        for path in walk_visible_files(root, scan_errors, kb_dir, excluded_roots=[assets_root]):
             if path.suffix.casefold() != ".md":
                 continue
             resolved = path.resolve()
@@ -722,7 +727,7 @@ def main():
     text_cache = {}
     documents, document_errors = load_documents(
         kb_dir, [schema["paths"]["raw"], schema["paths"]["wiki"]], text_cache=text_cache,
-        scan_errors=scan_errors,
+        scan_errors=scan_errors, excluded_roots=[schema["paths"]["assets"]],
     )
     if scan_errors:
         write_enabled = False

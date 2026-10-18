@@ -159,7 +159,7 @@ ingest / reingest
 [Agent with Skill rules]
          │
          ▼
-[Ingestion tool] ▶ [raw/ and URL snapshots in assets/]
+[Ingestion tool] ▶ [raw/ and URL snapshots in raw/assets/]
          │
          ▼
 [Agent: compile / update wiki/]
@@ -191,8 +191,8 @@ The wiki persists independently of a chat session as local Markdown with YAML me
 
 | Location | Contents |
 | -------- | -------- |
-| `raw/` | Source bodies, available origin information, capture times, and versions |
-| `assets/` | Original web responses and attachments |
+| `raw/` | Source material layer; material pages record bodies, origin information, capture times, and versions |
+| `raw/assets/` | Original web responses and attachments within the source layer; not processed as material pages |
 | `wiki/` | Summaries, entities, concepts, analyses, hubs, navigation, and logs |
 
 The index locates content, the overview describes coverage, and monthly logs record operations and pending reviews. Back up the complete knowledge base: logs summarize changes but do not provide a full file history. After manual edits, ask the agent to check references and navigation.

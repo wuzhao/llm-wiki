@@ -25,6 +25,28 @@ SCHEMA = load_schema()
 
 
 class SchemaTests(unittest.TestCase):
+    def test_initialization_keeps_assets_inside_raw_and_outside_page_types(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            kb = initialize_kb(temporary)
+            self.assertEqual({path.name for path in kb.iterdir()}, {"AGENTS.md", "raw", "wiki"})
+            self.assertTrue((kb / "raw/assets").is_dir())
+            self.assertIsNone(infer_document_type("raw/assets/original.md", SCHEMA))
+            self.assertEqual(infer_document_type("raw/note.md", SCHEMA), "source-material")
+
+    def test_assets_outside_raw_are_rejected_at_load_time(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "schema.json"
+            for assets in ("assets", "wiki/assets"):
+                with self.subTest(assets=assets):
+                    schema = copy.deepcopy(SCHEMA)
+                    previous = schema["paths"]["assets"]
+                    schema["paths"]["assets"] = assets
+                    for key in ("required_paths", "link_roots"):
+                        schema[key] = [assets if value == previous else value for value in schema[key]]
+                    path.write_text(json.dumps(schema), encoding="utf-8")
+                    with self.assertRaisesRegex(SchemaError, "paths.assets 必须位于 raw 内"):
+                        load_schema(path)
+
     def test_named_paths_are_required_and_limits_are_positive(self):
         self.assertEqual(SCHEMA["okf_version"], "0.2")
         self.assertFalse(set(SCHEMA["paths"].values()) - set(SCHEMA["required_paths"]))

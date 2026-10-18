@@ -18,18 +18,19 @@ def build_target_index(kb_dir, schema):
     by_name = defaultdict(list)
     by_stem = defaultdict(list)
     allowed_directories = set()
-    roots = {}
     scan_errors = {}
 
-    for root_name in schema["link_roots"]:
-        root = resolve_within(base, root_name)
+    roots = {name: resolve_within(base, name) for name in schema["link_roots"]}
+    for root_name, root in roots.items():
         allowed_directories.add(root)
-        roots[root_name] = root
-        for path in walk_visible_files(root, scan_errors, base):
+        nested_roots = [other for other in roots.values() if other != root and other.is_relative_to(root)]
+        for path in walk_visible_files(root, scan_errors, base, excluded_roots=nested_roots):
             resolved = path.resolve()
             try:
                 relative = resolved.relative_to(base).as_posix()
             except ValueError:
+                continue
+            if relative in by_relative:
                 continue
             by_relative[relative] = resolved
             by_name[resolved.name.casefold()].append(relative)
@@ -64,7 +65,7 @@ def target_relative(path, target_index):
 
 def target_root_name(path, target_index):
     resolved = Path(path).resolve()
-    for root_name, root in target_index["roots"].items():
+    for root_name, root in sorted(target_index["roots"].items(), key=lambda item: -len(item[1].parts)):
         if resolved == root or root in resolved.parents:
             return root_name
     return None
@@ -81,8 +82,8 @@ def candidate_paths(target_text, target_index, root_name):
         candidates = target_index["by_name"].get(name.casefold(), [])
     else:
         candidates = target_index["by_stem"].get(name.casefold(), [])
-    prefix = f"{root_name}/"
-    return sorted({path for path in candidates if path == root_name or path.startswith(prefix)})
+    return sorted({path for path in candidates
+                   if target_root_name(target_index["base"] / path, target_index) == root_name})
 
 
 def resolve_standard_link(source_relative, target_text, target_index):

@@ -102,9 +102,11 @@ def load_schema(schema_path=None):
     for key in REQUIRED_PATH_KEYS - {"raw", "assets", "wiki"}:
         if not paths[key].startswith(paths["wiki"] + "/"):
             raise SchemaError(f"paths.{key} 必须位于 wiki 内")
-    roots = [PurePosixPath(paths[key]) for key in ("raw", "assets", "wiki")]
-    if any(a in b.parents for a in roots for b in roots if a != b):
-        raise SchemaError("raw、assets 与 wiki 根目录不能相互嵌套")
+    raw, assets, wiki = (PurePosixPath(paths[key]) for key in ("raw", "assets", "wiki"))
+    if raw in wiki.parents or wiki in raw.parents:
+        raise SchemaError("raw 与 wiki 根目录不能相互嵌套")
+    if raw not in assets.parents:
+        raise SchemaError("paths.assets 必须位于 raw 内")
 
     required_paths = schema["required_paths"]
     if not isinstance(required_paths, list):
@@ -159,7 +161,7 @@ def load_schema(schema_path=None):
         if value not in paths.values():
             raise SchemaError(f"link_roots 未引用 paths 中的路径: {value}")
     if len(link_roots) != 3 or set(link_roots) != {paths[key] for key in ("raw", "assets", "wiki")}:
-        raise SchemaError("link_roots 必须包含 raw、assets 与 wiki 三个根目录")
+        raise SchemaError("link_roots 必须包含 raw、assets 与 wiki 三个链接范围")
 
     for document_type, sections in schema["required_sections"].items():
         if not isinstance(document_type, str) or not isinstance(sections, list):
@@ -206,8 +208,16 @@ def validate_structure(kb_dir, schema):
     return invalid
 
 
+def is_asset_path(relative_path, schema):
+    rel = Path(relative_path).as_posix().lstrip("./")
+    assets = schema["paths"]["assets"]
+    return rel == assets or rel.startswith(assets + "/")
+
+
 def infer_document_type(relative_path, schema):
     rel = Path(relative_path).as_posix().lstrip("./")
+    if is_asset_path(rel, schema):
+        return None
     exact = schema["document_types"]["exact"]
     if rel in exact:
         return exact[rel]

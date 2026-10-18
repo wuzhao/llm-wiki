@@ -21,7 +21,10 @@ class ProvenanceGraph:
     def __init__(self, kb_dir, schema, resolve, documents=None):
         self.schema, self.kb_dir = schema, kb_dir
         if documents is None:
-            self.documents, self.errors = load_documents(kb_dir, [schema["paths"]["raw"], schema["paths"]["wiki"]])
+            self.documents, self.errors = load_documents(
+                kb_dir, [schema["paths"]["raw"], schema["paths"]["wiki"]],
+                excluded_roots=[schema["paths"]["assets"]],
+            )
         else:
             self.documents, self.errors = documents, {}
         raw_prefix = schema["paths"]["raw"] + "/"

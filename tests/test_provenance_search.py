@@ -245,18 +245,32 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertIn('raw/hidden', error.getvalue())
         self.assertEqual(snapshot(self.kb), before)
 
-    def test_impact_reports_target_scan_errors_outside_markdown_roots(self):
+    def test_impact_reports_attachment_target_scan_errors(self):
         import contextlib
         import io
         from unittest.mock import patch
         from impact_wiki import main
         self.write('raw/source.md', 'Evidence')
-        hidden = self.kb / 'assets/hidden'
+        hidden = self.kb / 'raw/assets/hidden'
         hidden.mkdir()
         before = snapshot(self.kb)
         output = io.StringIO()
         with unreadable_directory(hidden), patch('sys.argv', ['impact_wiki.py', str(self.kb), '--source', 'raw/source.md']), contextlib.redirect_stdout(output):
             status = main()
         self.assertEqual(status, 1)
-        self.assertIn('assets/hidden', json.loads(output.getvalue())['read_errors'])
+        self.assertIn('raw/assets/hidden', json.loads(output.getvalue())['read_errors'])
+        self.assertEqual(snapshot(self.kb), before)
+
+    def test_impact_excludes_markdown_attachments_from_source_graph(self):
+        self.write('raw/source.md', 'Evidence')
+        self.write('wiki/concepts/alpha.md', 'Evidence', sources=[{'id': 'source', 'resource': '../../raw/source.md'}])
+        (self.kb / 'raw/assets/original.md').write_text('---\ntitle: invalid: yaml\n---\nOriginal attachment\n')
+        before = snapshot(self.kb)
+        result = self.command('impact_wiki.py', '--source', 'raw/source.md')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload['read_errors'])
+        self.assertEqual({entry['path'] for entry in payload['affected']}, {'wiki/concepts/alpha.md'})
+        rejected = self.command('impact_wiki.py', '--source', 'raw/assets/original.md')
+        self.assertEqual(rejected.returncode, 2)
         self.assertEqual(snapshot(self.kb), before)

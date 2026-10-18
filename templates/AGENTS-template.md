@@ -9,9 +9,9 @@
 ```text
 .
 ├── AGENTS.md              # 本文件，管理 Schema 与核心工作约定
-├── assets/                # 文档中的图片、PDF、MP3、其他附件等二进制文件
-│   └── YYYYMM             # 附件按月存储在不同的子目录
-├── raw/                   # 用户提供的原始素材，摄入时仅追加
+├── raw/                   # 原始素材层，包含正文、原始响应快照与附件
+│   └── assets/            # 原始响应、图片、PDF、MP3 等附件，不作为素材页处理
+│       └── YYYYMM         # 快照与附件按月存储在不同的子目录
 └── wiki/                  # 生成的 Wiki 页面，遵循 llm-wiki 规范
     ├── analyses/          # query 的归档输出（YYYYMMDD - <topic>.md）
     ├── concepts/          # 概念页（术语、方法、原理等）
@@ -29,7 +29,7 @@
 
 - 本文件所在目录是知识库根目录。技能与工具另行定位，不能因终端切换目录而改变知识库目标；具体路径约定见 skill 的 `preflight.md`。
 - raw 素材只追加新版本，历史正文始终只读；来源元数据维护遵循 skill 的 raw profile。
-- 图片、PDF 与其他附件保存到 `assets/YYYYMM/`。
+- 原始响应快照、图片、PDF 与其他附件保存到 `raw/assets/YYYYMM/`；附件不参与素材页的 frontmatter 校验或自动修复。
 - query/explore 默认只读，用户明确要求保存时在授权范围内直接执行。
 - 删除、重命名或批量改链接须先列明确切目标与影响范围并获准；重构授权不包含删除孤儿页。
 - 写入 wiki 后维护必要索引，先执行只读 lint，再追加一条完成日志；失败时说明已写入文件和未完成事项。具体收尾遵循 skill 的 `lint-policy.md`。

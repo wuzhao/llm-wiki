@@ -91,8 +91,8 @@ class IngestRawTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(list(Path(temp_dir).iterdir()), [])
             kb = initialize_kb(temp_dir)
-            (kb / "assets").rmdir()
-            (kb / "assets").write_text("wrong kind")
+            (kb / "raw/assets").rmdir()
+            (kb / "raw/assets").write_text("wrong kind")
             before = snapshot(kb)
             result = self.run_ingest(kb, "--text", "正文", "--title", "标题")
             self.assertNotEqual(result.returncode, 0)
@@ -161,6 +161,7 @@ class IngestRawTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             _, metadata, body, error = split_frontmatter(Path(result.stdout.strip()).read_text())
             self.assertEqual(error, '')
+            self.assertTrue(metadata['source_snapshot'].startswith('raw/assets/'))
             self.assertEqual((kb / metadata['source_snapshot']).read_bytes(), html.encode('utf-8'))
             self.assertEqual(metadata['source_snapshot_sha256'], hashlib.sha256(html.encode('utf-8')).hexdigest())
             self.assertEqual(metadata['body_sha256'], body_sha256(body))
@@ -201,7 +202,24 @@ class IngestRawTests(unittest.TestCase):
                 results = list(executor.map(lambda _: self.run_ingest(kb, '--text', 'same material', '--title', 'same'), range(2)))
             self.assertTrue(all(result.returncode == 0 for result in results))
             self.assertEqual(results[0].stdout, results[1].stdout)
-            self.assertEqual(len(list((kb / 'raw').iterdir())), 1)
+            self.assertEqual({path.name for path in (kb / 'raw').iterdir()},
+                             {'assets', Path(results[0].stdout.strip()).name})
+
+    def test_markdown_attachments_do_not_affect_ingest_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(directory)
+            first = self.run_ingest(kb, '--text', 'same material', '--title', 'same')
+            self.assertEqual(first.returncode, 0, first.stderr)
+            attachment = kb / 'raw/assets/original.md'
+            attachment.write_text('---\ntitle: invalid: yaml\n---\nOriginal attachment\n')
+            before = snapshot(kb)
+            duplicate = self.run_ingest(kb, '--text', 'same material', '--title', 'same')
+            self.assertEqual(duplicate.returncode, 0, duplicate.stderr)
+            self.assertEqual(duplicate.stdout, first.stdout)
+            self.assertEqual(snapshot(kb), before)
+            new = self.run_ingest(kb, '--text', 'new material', '--title', 'new')
+            self.assertEqual(new.returncode, 0, new.stderr)
+            self.assertEqual(attachment.read_bytes(), before['raw/assets/original.md'])
 
     def test_corrupted_url_snapshot_is_not_reused_as_an_identical_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -223,7 +241,7 @@ class IngestRawTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             kb = initialize_kb(directory)
             month = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m')
-            (kb / 'assets' / month).symlink_to(kb / 'wiki', target_is_directory=True)
+            (kb / 'raw/assets' / month).symlink_to(kb / 'wiki', target_is_directory=True)
             before = snapshot(kb)
             result = self.run_ingest(kb, '--url', 'data:text/plain,source', '--title', 'source')
             self.assertNotEqual(result.returncode, 0)

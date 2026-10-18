@@ -155,7 +155,7 @@ ingest / reingest
 [Agent with Skill rules]
          │
          ▼
-[Ingestion tool] ▶ [raw/ and URL snapshots in assets/]
+[Ingestion tool] ▶ [raw/ and URL snapshots in raw/assets/]
          │
          ▼
 [Agent: compile / update wiki/]
@@ -187,8 +187,8 @@ query / explore
 
 | 位置 | 内容 |
 | ---- | ---- |
-| `raw/` | 原始正文、可用的来源地址或路径、采集时间与版本 |
-| `assets/` | 网页原始响应快照与附件 |
+| `raw/` | 原始素材层，素材页保存正文、来源地址或路径、采集时间与版本 |
+| `raw/assets/` | 原始素材层内的网页原始响应快照与附件，不作为素材页处理 |
 | `wiki/` | 摘要、实体、概念、分析、主题聚合、索引、概览与日志 |
 
 索引定位内容，概览说明覆盖范围，月度日志记录操作及待复核事项。备份应包含完整知识库；日志是变更摘要，不能替代完整文件历史。手动修改知识页后，可让 Agent 检查引用与索引。

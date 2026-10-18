@@ -28,10 +28,20 @@ def source_identity(metadata, kb_dir):
     return "sha256:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def walk_visible_files(root, errors=None, kb_dir=None):
+def walk_visible_files(root, errors=None, kb_dir=None, excluded_roots=()):
     """Collect visible files; never silently treat a failed walk as complete."""
     root = Path(root)
     base = Path(kb_dir) if kb_dir is not None else None
+    excluded = [Path(path).resolve() for path in excluded_roots]
+
+    def is_excluded(path):
+        if not excluded:
+            return False
+        resolved = path.resolve()
+        return any(resolved.is_relative_to(directory) for directory in excluded)
+
+    if is_excluded(root):
+        return []
 
     def onerror(error):
         if errors is None:
@@ -45,22 +55,25 @@ def walk_visible_files(root, errors=None, kb_dir=None):
 
     files = []
     for current, directories, filenames in os.walk(root, onerror=onerror):
-        directories[:] = [name for name in directories if not name.startswith(".")]
-        files.extend(Path(current) / name for name in filenames if not name.startswith("."))
+        directories[:] = [name for name in directories
+                          if not name.startswith(".") and not is_excluded(Path(current) / name)]
+        files.extend(Path(current) / name for name in filenames
+                     if not name.startswith(".") and not is_excluded(Path(current) / name))
     return files
 
 
-def load_documents(kb_dir, roots, text_cache=None, scan_errors=None):
+def load_documents(kb_dir, roots, text_cache=None, scan_errors=None, excluded_roots=()):
     base = Path(kb_dir).resolve()
     documents = {}
     errors = {}
     scan_errors = {} if scan_errors is None else scan_errors
+    excluded = [base / path for path in excluded_roots]
     for relative_root in roots:
         root = (base / relative_root).resolve()
         if not root.is_relative_to(base):
             errors[relative_root] = "素材目录越出知识库"
             continue
-        for path in walk_visible_files(root, scan_errors, base):
+        for path in walk_visible_files(root, scan_errors, base, excluded_roots=excluded):
             if path.suffix.casefold() != ".md":
                 continue
             path = path.resolve()
@@ -84,7 +97,8 @@ def load_documents(kb_dir, roots, text_cache=None, scan_errors=None):
 
 
 def raw_inventory(kb_dir, schema):
-    documents, errors = load_documents(kb_dir, [schema["paths"]["raw"]])
+    documents, errors = load_documents(kb_dir, [schema["paths"]["raw"]],
+                                      excluded_roots=[schema["paths"]["assets"]])
     latest = latest_sources(documents, kb_dir)
     return documents, latest, errors
 

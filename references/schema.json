@@ -3,7 +3,7 @@
   "okf_version": "0.2",
   "paths": {
     "raw": "raw",
-    "assets": "assets",
+    "assets": "raw/assets",
     "wiki": "wiki",
     "summaries": "wiki/summaries",
     "entities": "wiki/entities",
@@ -17,7 +17,7 @@
   "required_paths": [
     "AGENTS.md",
     "raw",
-    "assets",
+    "raw/assets",
     "wiki",
     "wiki/summaries",
     "wiki/entities",
@@ -51,7 +51,7 @@
   },
   "link_roots": [
     "raw",
-    "assets",
+    "raw/assets",
     "wiki"
   ],
   "required_sections": {

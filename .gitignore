@@ -36,5 +36,4 @@ __pycache__/
 
 # Local knowledge-base data (stored separately from the skill)
 /raw/
-/assets/
 /wiki/

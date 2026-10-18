@@ -14,7 +14,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from lint_wiki import heuristic_checks, split_frontmatter
-from wiki_links import build_target_index
+from wiki_links import build_target_index, resolve_standard_link, resolve_wikilink
 from kb_fixture import snapshot, unreadable_directory
 from wiki_config import load_markdown_template, load_schema
 
@@ -166,6 +166,52 @@ class LintWikiTests(unittest.TestCase):
         result = self.run_lint("--fix")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("[[raw/alpha]]", beta.read_text(encoding="utf-8"))
+
+    def test_nested_assets_have_unique_targets_and_separate_repair_candidates(self):
+        raw = self.kb / "raw/alpha.md"
+        raw.write_text(markdown({"type": "source-material", "title": "alpha"}, "Original material"))
+        asset = self.kb / "raw/assets/alpha.md"
+        asset.write_text("# Original attachment\n")
+        (self.kb / "raw/assets/attachment-only.md").write_text("# Attachment only\n")
+        (self.kb / "raw/material-only.md").write_text("# Material only\n")
+        index = build_target_index(self.kb, SCHEMA)
+        self.assertEqual(index["by_name"]["alpha.md"].count("raw/assets/alpha.md"), 1)
+        self.assertEqual(index["by_stem"]["alpha"].count("raw/assets/alpha.md"), 1)
+        for resolver, targets in (
+            (lambda target: resolve_wikilink("wiki/concepts/beta.md", target, index, SCHEMA),
+             ("raw/missing/alpha", "raw/assets/missing/alpha", "raw/missing/attachment-only", "raw/assets/missing/material-only")),
+            (lambda target: resolve_standard_link("wiki/concepts/beta.md", target, index),
+             ("../../raw/missing/alpha.md", "../../raw/assets/missing/alpha.md", "../../raw/missing/attachment-only.md", "../../raw/assets/missing/material-only.md")),
+        ):
+            with self.subTest(targets=targets):
+                self.assertEqual(resolver(targets[0])["candidates"], ["raw/alpha.md"])
+                self.assertEqual(resolver(targets[1])["candidates"], ["raw/assets/alpha.md"])
+                self.assertEqual(resolver(targets[2])["candidates"], [])
+                self.assertEqual(resolver(targets[3])["candidates"], [])
+        beta = self.write_concept("beta", "[[raw/missing/alpha]]\n[[raw/assets/missing/alpha]]")
+        result = self.run_lint("--fix")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("[[raw/alpha]]", beta.read_text())
+        self.assertIn("[[raw/assets/alpha]]", beta.read_text())
+        self.assertEqual(asset.read_text(), "# Original attachment\n")
+
+    def test_markdown_attachments_are_linkable_but_never_linted_or_repaired(self):
+        attachment = self.kb / "raw/assets/original.md"
+        attachment.write_bytes(b"---\ntitle: invalid: yaml\n---\n# Original\n\n[[missing]]\n")
+        original = attachment.read_bytes()
+        self.write_concept("alpha", "[Attachment](../../raw/assets/original.md)\n[[raw/assets/original]]")
+        for scope in ([], ["--lint-dirs", "raw"], ["--lint-files", "wiki/concepts/alpha.md"]):
+            with self.subTest(scope=scope):
+                result = self.run_lint(*scope, "--fix", "--fail-on", "error")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("[[raw/assets/original.md]]", result.stdout)
+                self.assertEqual(attachment.read_bytes(), original)
+        for scope in (["--lint-files", "raw/assets/original.md"], ["--lint-dirs", "raw/assets"]):
+            with self.subTest(scope=scope):
+                before = snapshot(self.kb)
+                result = self.run_lint(*scope, "--fix")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertEqual(snapshot(self.kb), before)
 
     def test_standard_markdown_link_is_repaired_relative_to_current_page(self):
         self.write_concept("alpha")

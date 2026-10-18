@@ -35,14 +35,14 @@
 
 ### raw 素材页
 
-`raw/**/*.md` 是知识 bundle 之外的摄入存储，使用独立 raw profile：
+`raw/**/*.md`（不含 `raw/assets/` 下的附件）是知识 bundle 之外的摄入存储，使用独立 raw profile。附件即使是 Markdown 文件也不按素材页解析、校验或自动修复：
 
 - `type` 必填，固定由路径推断为 `source-material`。
 - `title` 用于辨识素材，缺失时 lint 可以安全补齐。
 - `resource`、`source_url`、`source_file_path` 与 `source_file_sha256` 按来源类型选填。
 - `timestamp` 表示采集时间，是 LLM Wiki 自定义字段，不是 OKF 0.2 推荐字段。
 - `source_id`、`source_version`、`supersedes` 分别记录来源身份、版本与前一快照的知识库相对路径；`content_sha256` 用于相同内容提醒，`body_sha256` 用于检测 raw 正文是否改变。
-- URL 的 `source_snapshot` 指向 `assets/` 中的原始响应，`source_snapshot_sha256` 校验响应字节，`source_media_type`、`source_encoding`、`resolved_url` 与 `extraction_version` 描述提取过程；这些都是本项目扩展。
+- URL 的 `source_snapshot` 使用知识库相对路径，指向 `raw/assets/` 中的原始响应；`source_snapshot_sha256` 校验响应字节，`source_media_type`、`source_encoding`、`resolved_url` 与 `extraction_version` 描述提取过程；这些都是本项目扩展。
 - lint 不要求 raw 提供 wiki profile 的 `description`、`tags`、`generated`、`verified`、`status` 或 `stale_after`。
 - 首次摄入正常生成元数据；既有 raw 正文连同链接、空白和换行保持只读。显式 `lint --fix` 仅补齐可确定的 `type` 与 `title`，保留来源地址、采集时间及未知字段。其他元数据纠正须有来源依据并记录日志，不能猜测地址或时间。
 

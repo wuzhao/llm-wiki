@@ -38,7 +38,7 @@ def fetch_url_content(url, limits, capture=None):
     with urllib.request.urlopen(req, timeout=limits["url_timeout_seconds"]) as response:
         media_type = response.headers.get_content_type()
         if not (media_type.startswith("text/") or media_type == "application/xhtml+xml"):
-            raise ValueError(f"URL 返回非文本内容 {media_type}，请将附件保存到 assets 后提取正文")
+            raise ValueError(f"URL 返回非文本内容 {media_type}，请先保存原始附件再提取正文")
         data = response.read(limits["max_source_bytes"] + 1)
         if len(data) > limits["max_source_bytes"]:
             raise ValueError("URL 内容超过 max_source_bytes")
