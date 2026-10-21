@@ -25,6 +25,27 @@
 - `status` 只使用 `draft`、`stable` 或 `deprecated`；缺失时按 `stable` 解释。
 - 本地 profile 支持可选 `aliases` 字符串数组供搜索使用；`sources[].body_sha256` 记录实际读取的来源正文指纹，`sources[].historical: true` 表示该来源仅支撑明确保留的历史内容。逐条证据引用与依赖更新见 `provenance-policy.md`，不改变 OKF 的最小必填要求。
 
+### 来源摘要的提炼状态
+
+`wiki/summaries/` 支持可选扩展 `synthesis`，不改变 OKF 的最小必填要求。其他知识页不需要复制此字段：
+
+```yaml
+synthesis:
+  reviewed_sha256: <synthesis_wiki.py 返回的本页检查指纹>
+  # reviewed_in: <参与到期回扫时工具返回的 review_id>
+  deferred:
+    - name: 缓存失效
+      type: concept
+      aliases: [cache invalidation]
+      reason: 仅说明需要失效策略，尚无策略定义或适用条件
+      next_when: 新素材提供具体策略、边界或实例时重新检查
+```
+
+- `reviewed_sha256` 覆盖摘要正文、标题、别名和来源引用，不包含 `synthesis` 自身；只能在实际检查后记录工具给出的当前值。
+- `reviewed_in` 记录本页实际参与的回扫轮次，工具据此恢复未完成批次。它不表示人工验证或独立证据数量。
+- `deferred` 必须是数组，无值得保留的候选时使用 `[]`。每项的 `name`、`type`、`reason` 和 `next_when` 必填；`type` 为 `entity` 或 `concept`，可选 `aliases` 为字符串数组。
+- 字段缺失的旧摘要进入待检查清单，不自动补齐；字段格式错误或指纹不一致按 `lint-policy.md` 报告，禁止自动伪造检查记录。具体触发与建页标准见 `synthesis-policy.md`。
+
 ### bundle index
 
 `wiki/` 是知识 bundle 根目录，`wiki/index.md` 是 OKF 0.2 的根 index：

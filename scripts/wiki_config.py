@@ -21,6 +21,7 @@ REQUIRED_LIMIT_KEYS = {
     "max_page_lines", "max_page_bytes", "max_page_h2",
     "max_query_read_pages", "max_search_snippet_chars", "max_lint_batch_pages", "max_log_bytes", "review_after_days",
     "max_source_bytes", "url_timeout_seconds",
+    "synthesis_review_interval",
 }
 
 

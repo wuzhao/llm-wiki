@@ -10,6 +10,7 @@ Inspired by Andrej Karpathy's [LLM Wiki pattern](https://gist.github.com/karpath
 
 - Captured sources with available origin information, timestamps, and versions.
 - Summaries, entities, concepts, analyses, and topic hubs linked to their evidence.
+- Topic checks on every ingestion, with resumable reviews of older summaries and recorded reasons for deferred topics.
 - Answers and research suggestions with citations, explicit uncertainty, and preserved disagreements.
 - Navigation and operation logs, backed by checks for broken links, missing evidence, and stale dependencies.
 
@@ -89,7 +90,7 @@ Queries are read-only by default. Ask to archive the answer to save it as an ana
 ### Revisit a changed source
 
 ```text
-Reingest /path/to/article.md into my-wiki/. Update affected pages,
+Ingest the updated /path/to/article.md into my-wiki/. Update affected pages,
 preserve relevant history and conflicts, and list anything awaiting review.
 ```
 
@@ -101,6 +102,16 @@ missing evidence, and connections worth investigating.
 ```
 
 Exploration is read-only by default. Request saving explicitly to keep the result.
+
+### Synthesize existing summaries
+
+```text
+Review the existing summaries in my-wiki/. Create or update entity and
+concept pages when the evidence supports them; retain deferred topics
+with their reasons and the information needed to revisit them.
+```
+
+The first synthesis pass reviews the existing backlog. Later rounds run during ingestion when the configured interval is reached. Page creation depends on useful evidence, not mention counts or a quota.
 
 ### Check and repair
 
@@ -124,8 +135,8 @@ Ask the agent about any of these workflows, modes, or tools:
 | Operation | Name to use with the agent | Result |
 | --------- | -------------------------- | ------ |
 | Initialize | `init` | Create the base structure and files in an empty directory |
-| Ingest | `ingest` | Preserve a source and update summaries and relevant pages |
-| Reingest | `reingest` | Capture a new version and review affected pages |
+| Ingest and update | `ingest` | Handle new sources, revisions, duplicate input, and unfinished processing; maintain summaries and relevant pages |
+| Synthesize knowledge | `synthesize` | Review existing summaries, maintain entity and concept pages, and retain deferred topics |
 | Query | `query` | Synthesize an answer with citations; read-only by default |
 | Archive an answer | `query` with an archive/save request | Save the answer as an analysis page |
 | Explore | `explore` | Investigate knowledge gaps, connections, and structural improvements; read-only by default |
@@ -152,7 +163,7 @@ The skill defines the rules and page templates. Tools handle capture, search, de
 ### Compilation and retrieval
 
 ```text
-ingest / reingest
+ingest
 [Files / URLs / Text]
          │
          ▼
@@ -181,7 +192,7 @@ query / explore
           [Answer with citations / Research directions]
 ```
 
-An unchanged source that was fully processed returns its existing pages. If capture succeeded but compilation was unfinished, the agent can complete that work. Integration follows the actual contribution: a citation or qualification may be enough, without creating another concept page.
+Ingest uses source identity and actual changes to choose initial capture or a version update; matching titles do not establish identity. Pasted-text revisions need an existing source identity, supplied by the agent through `--source-id`. An unchanged source that was fully processed returns its existing pages. If summary compilation, topic checks, or propagation of a prior update were unfinished, the agent completes that work. Every ingestion checks core entities, concepts, and related older summaries. Sufficient evidence leads to a page update or creation; deferred topics remain recorded in summary metadata. The read-only `synthesis_wiki.py` tool lists review batches and resumes progress from summaries and log checkpoints. Duplicate source content does not advance the interval.
 
 For source revisions, the agent combines dependency records with full-text search to review affected claims. Current findings, history, and unresolved conflicts remain distinct. Archived analyses retain their historical text and are flagged for review when dependencies change. Queries read candidate pages in batches and trace important numbers, quotations, and conflicts back to raw sources.
 
@@ -210,7 +221,7 @@ The policies and templates currently use Chinese, with some headings and index c
 - Structural validity and a matching number do not prove a claim. Reading can continue across batches; disclose unreadable content and distinguish partial results from conclusions about the whole wiki.
 - Checks report findings by default; safe repairs handle deterministic cases. Deletion, renaming, and bulk link changes require an impact report and authorization for the exact targets.
 - Blocking errors need correction and rechecking; nonblocking warnings may remain if disclosed. Record incomplete status when writes have occurred but the operation cannot finish, and report any logging failure. Multi-file updates are not atomic and successful writes are not automatically rolled back.
-- Workflows run on request. Web changes require reingestion; checks can detect local source file changes. Directory separation is not a filesystem sandbox. The agent's configuration and model service determine access and how content sent to a remote model is handled.
+- Workflows run on request. Web changes require ingesting the source again; checks can detect local source file changes. Directory separation is not a filesystem sandbox. The agent's configuration and model service determine access and how content sent to a remote model is handled.
 
 ## Documentation and contributions
 
@@ -218,6 +229,7 @@ The policies and templates currently use Chinese, with some headings and index c
 | ----------- | ------- |
 | [SKILL.md](SKILL.md) | Task routing and core guardrails |
 | [Policy index](references/README.md) | Workflow rules |
+| [Synthesis policy](references/synthesis-policy.md) | Page criteria, deferred topics, and periodic review |
 | [Preflight](references/preflight.md) | Workspace, skill, knowledge base, and tool paths |
 | [Provenance and updates](references/provenance-policy.md) | Citations, source versions, and change propagation |
 | [Lint policy](references/lint-policy.md) | Write checks and safe repair scope |

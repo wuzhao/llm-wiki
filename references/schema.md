@@ -18,13 +18,15 @@
 - `index_sections`：内容目录到 index 分区的映射。
 - `link_roots`：允许知识链接指向的目录范围；嵌套目录按最长路径前缀识别归属。
 - `required_sections`：页面类型必须包含的关键小节。
-- `limits`：页面体积、单批查询页数、搜索片段长度 `max_search_snippet_chars`、lint 批次、陈旧性复核阈值，以及摄入的 `max_source_bytes` 和 `url_timeout_seconds`。采集字节数和解码后的 UTF-8 正文均受素材大小限制。
+- `limits`：页面体积、单批查询页数、搜索片段长度 `max_search_snippet_chars`、lint 批次、陈旧性复核阈值、提炼回扫周期 `synthesis_review_interval`，以及摄入的 `max_source_bytes` 和 `url_timeout_seconds`。采集字节数和解码后的 UTF-8 正文均受素材大小限制。
 
 实体与概念只要求保留来源小节，相关概念、示例和应用场景按实际内容添加。不设置正文最少字数，完整短页与空正文分别处理。
 
+`synthesis_review_interval` 按摘要来源链可回查的不同 raw 正文内容累计，去重与检查点规则见 `synthesis-policy.md`。数量只触发回扫，不是建页门槛；回扫批次复用 `max_query_read_pages`。检查状态保存在摘要与事务日志中，不增加必需目录或独立状态文件。
+
 ## 路径职责
 
-- `raw`：原始素材层，包含素材正文与附件；素材页在摄入与重新摄入时只追加，历史正文始终只读，显式 `lint --fix` 仅可补齐可确定的 frontmatter 字段。
+- `raw`：原始素材层，包含素材正文与附件；素材页在 ingest 的新增与更新分支只追加，重复输入复用已有快照，历史正文始终只读，显式 `lint --fix` 仅可补齐可确定的 frontmatter 字段。
 - `assets`：位于 `raw/assets/` 的网页原始响应、图片、PDF、截图等附件；不参与素材页解析、版本识别或 frontmatter 修复，仍作为链接目标和快照校验对象。
 - `summaries`：对应 raw 素材的摘要页。
 - `entities`：项目、工具、组织、人物等实体页。

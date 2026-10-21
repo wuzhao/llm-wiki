@@ -204,6 +204,9 @@ class SchemaTests(unittest.TestCase):
         del schema["limits"]["max_page_bytes"]
         cases.append(schema)
         schema = copy.deepcopy(SCHEMA)
+        del schema["limits"]["synthesis_review_interval"]
+        cases.append(schema)
+        schema = copy.deepcopy(SCHEMA)
         del schema["paths"]["logs"]
         cases.append(schema)
         schema = copy.deepcopy(SCHEMA)

@@ -12,6 +12,7 @@
 - 各 workflow 策略：只描述该任务特有的行为。
 - `lint-policy.md` 的「写后检查」：所有写入任务共用的索引维护、验证、修正和事务日志。
 - `provenance-policy.md`：论断证据与来源变化的传播协议；`query-policy.md`：搜索和分批读取。
+- `synthesis-policy.md`：摄入主题检查、实体与概念建页门槛、暂缓候选与可恢复的周期回扫。
 - `scalability-policy.md`：出现容量问题时的治理选择；`golden-sample.md`：发布前回归。
 
 模板只物化产物结构；知识库 AGENTS 保留独立使用时必要的简短底线，详细流程引用对应策略，不复制另一份规范。

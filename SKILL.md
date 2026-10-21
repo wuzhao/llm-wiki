@@ -17,16 +17,19 @@ metadata:
 | 任务 | 执行策略 |
 | ---- | -------- |
 | init，初始化空知识库 | `references/init-files.md`、`references/schema.md` |
-| ingest/reingest，摄入或更新素材 | `references/ingest-policy.md`、`references/provenance-policy.md` |
+| ingest，摄入素材（含更新与补完） | `references/ingest-policy.md`、`references/provenance-policy.md` |
+| synthesize，整理已有摘要、提炼知识页 | `references/synthesis-policy.md` |
 | query，基于库内内容回答 | `references/query-policy.md` |
 | explore，研究方向与知识缺口 | `references/explore-policy.md` |
 | lint，健康检查 | `references/lint-policy.md`；核验来源时补读 `references/provenance-policy.md` |
 | cleanup，删除内容 | 本文件的「清理内容」 |
 
+- 摄入、投喂、重新摄入、重新投喂及更新素材的请求均执行 ingest，由来源身份、内容变化与编译进度决定分支，不因再次输入就强制新增版本或重建页面。
 - 写入前补读 `references/guardrails.md`、`references/okf-frontmatter.md`，只加载本次产物需要的 `templates/` 模板。
 - 回查原始证据时读 `references/provenance-policy.md`；发现容量问题或用户要求结构治理时读 `references/scalability-policy.md`。
 - 本地工具异常时按 `references/guardrails.md` 的环境处理规则诊断。
 - 回归或发布前读 `references/golden-sample.md`。
+- ingest 必须执行 `references/synthesis-policy.md` 的主题检查与到期回扫；满足建页门槛时在本次任务内创建或更新，不以「按需」推迟。目录为空不强制产出，目录非空也不免除检查。
 
 ## 5 条护栏（必须执行）
 
@@ -38,7 +41,7 @@ metadata:
 
 ## 共用写入收尾
 
-init、ingest、reingest、query 归档、explore 落盘与 cleanup 统一执行 `references/lint-policy.md` 的「写后检查」，由该策略定义索引维护、只读检查、修正与事务日志。只读 query/explore 不触发收尾流程。
+init、ingest、synthesize、query 归档、explore 落盘与 cleanup 统一执行 `references/lint-policy.md` 的「写后检查」，由该策略定义索引维护、只读检查、修正与事务日志。只读 query/explore 不触发收尾流程。
 
 ## 清理内容
 

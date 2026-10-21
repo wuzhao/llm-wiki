@@ -34,6 +34,7 @@ from markdown_links import mask_non_prose, standard_link_occurrences, standard_l
 from wiki_links import build_target_index, is_allowed_target, resolve_standard_link, resolve_wikilink
 from wiki_metadata import body_sha256, parse_datetime, split_frontmatter
 from wiki_sources import latest_sources, load_documents, source_identity, walk_visible_files
+from synthesis_wiki import review_fingerprint, validate_synthesis
 from wiki_provenance import ProvenanceGraph
 
 
@@ -819,6 +820,14 @@ def main():
         issues += check_raw_snapshot(relative, metadata, body, kb_dir, schema)
         issues += check_sources(relative, metadata, target_index)
         issues += heuristic_checks(relative, body, metadata, schema)
+        if relative.startswith(schema["paths"]["summaries"] + "/"):
+            state_errors = validate_synthesis(metadata)
+            issues.extend(make_issue("🔴", error, "按 synthesis-policy.md 修正提炼记录，不自动判断知识价值", line=1)
+                          for error in state_errors)
+            state = metadata.get("synthesis")
+            if (isinstance(state, dict) and not state_errors
+                    and state["reviewed_sha256"] != review_fingerprint({"metadata": metadata, "body": body})):
+                issues.append(make_issue("🟡", "摘要提炼记录与当前内容不一致", "重新检查相关主题后记录工具返回的指纹", line=1))
         conflict_issues = check_conflicts(mask_code(body))
         body_offset = content.count("\n", 0, len(content) - len(body))
         for issue in conflict_issues:

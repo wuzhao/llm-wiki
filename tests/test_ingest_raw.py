@@ -135,7 +135,7 @@ class IngestRawTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(snapshot(kb), before)
 
-    def test_reingest_preserves_old_raw_and_source_hash(self):
+    def test_ingest_source_update_preserves_old_raw_and_source_hash(self):
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as inputs:
             import hashlib
             kb = initialize_kb(temp_dir)
