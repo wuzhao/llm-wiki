@@ -8,7 +8,7 @@ description: <一句话定义>
 # resource: <存在 canonical URI 时填写>
 tags: [entity, tag1, tag2]
 aliases: []
-generated: { by: llm-wiki/0.1.0, at: YYYY-MM-DDTHH:MM:SSZ }
+generated: { by: llm-wiki/0.2.0, at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 # verified:
 #   - { by: human:<id>, at: YYYY-MM-DDTHH:MM:SSZ }

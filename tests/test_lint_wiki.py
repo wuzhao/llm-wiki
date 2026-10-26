@@ -290,7 +290,8 @@ class LintWikiTests(unittest.TestCase):
         month = log_path.stem
         log_content = log_path.read_text(encoding="utf-8")
         log_metadata = yaml.safe_load(log_content.split("---\n", 2)[1])
-        self.assertEqual(log_metadata["generated"]["by"], "llm-wiki/0.1.0")
+        template_metadata = yaml.safe_load(load_markdown_template("log-template.md").split("---\n", 2)[1])
+        self.assertEqual(log_metadata["generated"]["by"], template_metadata["generated"]["by"])
         self.assertNotIn("timestamp", log_metadata)
         self.assertIn(f"# Wiki Log {month[:4]}-{month[4:]}", log_content)
         self.assertIn("lint | mode=fix", log_content)
