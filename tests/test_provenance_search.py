@@ -153,6 +153,25 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertEqual(result.stdout.count('关键数值或引文缺少逐条来源'), 1)
         self.assertEqual(snapshot(self.kb), before)
 
+    def test_calendar_and_lexical_noise_do_not_hide_numeric_or_citation_errors(self):
+        self.write('raw/source.md', 'Published June 7, 2026. 三人受伤，重试三次。')
+        self.write('raw/other.md', '2026年6月8日，两人受伤，重试两次。')
+        self.write('wiki/concepts/alpha.md',
+                   '发布于2026 年 6 月 7 日。[^a]\n\n'
+                   '同一项目采用另一种方式；一次性补贴与二次分配，使用三元组。\n\n'
+                   '发布于2026年6月8日。[^a]\n\n两人受伤，重试两次。[^a]\n\n'
+                   '另有两人受伤。\n\n[^a]: 原始记录\n[^b]: 另一来源',
+                   sources=[{'id': 'a', 'resource': '../../raw/source.md'},
+                            {'id': 'b', 'resource': '../../raw/other.md'}])
+        before = snapshot(self.kb)
+        result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 2)
+        self.assertIn('原文未定位到数值或引文候选: 2026年6月8日', result.stdout)
+        self.assertIn('两人, 两次', result.stdout)
+        self.assertEqual(result.stdout.count('关键数值或引文缺少逐条来源'), 1)
+        self.assertEqual(snapshot(self.kb), before)
+
     def test_new_source_version_propagates_drift_to_archived_analysis(self):
         self.write('raw/old.md', '42ms', source_url='https://example.com/source', timestamp='2026-01-01T00:00:00Z')
         self.write('wiki/summaries/summary.md', '42ms', sources=[{'id': 'raw', 'resource': '../../raw/old.md'}])

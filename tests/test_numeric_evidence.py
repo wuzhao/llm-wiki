@@ -50,6 +50,7 @@ class NumericEvidenceTests(unittest.TestCase):
             ('3.5%', '1e3.5%'), ('1000', 'item_1000'),
             ('1.2', '版本 1.2.3'),
             ('1GB', '1GB/s'), ('50%', '50%/年'),
+            ('2秒', '1GB/2s'),
         )
         for left, right in pairs:
             with self.subTest(left=left, right=right):
@@ -117,10 +118,74 @@ class NumericEvidenceTests(unittest.TestCase):
         self.assertEqual(claim_literals('一方面十分重要，另一方面千方百计。\n第 1 步：说明。'), set())
         self.assertEqual(claim_literals('42ms 和四十二毫秒'), {'42ms', '四十二毫秒'})
 
+    def test_lexical_counts_and_selectors_do_not_become_cardinal_claims(self):
+        for text in ('同一项目', '另一种思路', '每一条输入', '某一次运行', '下一次迭代',
+                     '一次性补贴', '二次分配', '二次引用与二次创作', '二元对立与三元组',
+                     '三元角色、三元分工与三元协作架构'):
+            with self.subTest(text=text):
+                self.assertEqual(claim_literals(text), set())
+                self.assertEqual(missing_literals(text, '其他措辞'), [])
+        self.assertEqual(claim_literals('一次性补贴200元，二次分配涉及3次转账。'), {'200元', '3次'})
+        for claim, evidence in (('两人受伤', '三人受伤'), ('只有一人', '只有两人'),
+                                ('发生一次事故', '发生两次事故'), ('重试两次', '重试三次'),
+                                ('其中一项失败', '其中两项失败'), ('三元成本', '四元成本'),
+                                ('至少一个', '一个'), ('有两个条件', '有三个条件')):
+            with self.subTest(claim=claim, evidence=evidence):
+                self.assertTrue(missing_literals(claim, evidence))
+        self.assertEqual(missing_literals('原文：「一次性补贴」', '单笔补贴'), ['一次性补贴'])
+        self.assertEqual(missing_literals('1条', '每一条输入'), ['1条'])
+        self.assertEqual(missing_literals('3元', '三元组'), ['3元'])
+
+    def test_complete_calendar_dates_match_across_languages(self):
+        for value in ('2026年6月7日', '2026 年 6 月 7 日', '二〇二六年六月七日',
+                      '二零二六年六月七号', 'June 7, 2026', 'Jun. 7, 2026', 'June 7,2026',
+                      '7 June 2026', '7 JUN 2026'):
+            with self.subTest(value=value):
+                self.assertEqual(len(claim_literals(value)), 1)
+                self.assertEqual(missing_literals(value, '2026-06-07'), [])
+                self.assertEqual(missing_literals('2026-06-07', value), [])
+        self.assertEqual(missing_literals('2024年2月29日', 'February 29, 2024'), [])
+        self.assertEqual(missing_literals('2026年9月30日', '30 Sept. 2026'), [])
+        self.assertEqual(missing_literals('约2026年6月7日', 'about June 7, 2026'), [])
+        self.assertEqual(missing_literals('2026年6月7日之前', 'before June 7, 2026'), [])
+        self.assertEqual(missing_literals('2026-06-07至2026-06-09', '7 June 2026 到 9 June 2026'), [])
+        self.assertEqual(missing_literals('2026-06-07至2026-06-09', 'June 7, 2026 to June 9, 2026'), [])
+
+    def test_calendar_dates_preserve_day_range_and_qualifiers(self):
+        pairs = (
+            ('2026年6月7日', '2026年6月8日'), ('2026年6月7日', 'July 6, 2026'),
+            ('2026年6月7日', '06/07/2026'), ('2026年6月7日', '约2026年6月7日'),
+            ('2026年6月7日', '2026年6月7日以前'), ('2026年6月7日', '截至2026年6月7日'),
+            ('2026年6月7日', '负2026年6月7日'), ('2026-06-07', '-2026-06-07'),
+            ('2026年6月7日', '2026年6月7日/年'),
+            ('2026-06-08', '2026-06-07/2026-06-08'),
+            ('2026年6月7日', 'before June 7, 2026'),
+            ('2026年6月7日', 'June 7, 2026 to June 9'),
+            ('2026-06-07至2026-06', '2026-06-07至2026-07'),
+            ('2026年6月7日至2027年8月', '2026年6月7日至2027年9月'),
+            ('2026年6月7日', '2026年6月7日至2026年6月9日'),
+            ('2026年6月7日', '2026年6月7日至9日'),
+            ('2026年6月7日至2026年6月9日', '2026年6月7日；2026年6月9日'),
+            ('2026年6月7日', '2026年6月1日，2025年7月7日'),
+            ('2026年6月7日', '2026年6月\n7日'),
+            ('2026年6月7日', '2026年6月[^a]7日'),
+            ('2026年', '2026年6月7日'), ('6月', '2026年6月7日'),
+            ('1.91亿', '1亿 2026年6月7日 9100万'),
+        )
+        for claim, evidence in pairs:
+            with self.subTest(claim=claim, evidence=evidence):
+                self.assertTrue(missing_literals(claim, evidence))
+        for value in ('2026-02-30', '2026年2月29日', 'February 30, 2026',
+                      '06/07/2026', '2026年6月7日至9日'):
+            with self.subTest(value=value):
+                self.assertEqual(missing_literals(value, value), [])
+                self.assertEqual(missing_literals(value, '没有日期。'), [value])
+
     def test_direct_quotes_still_require_exact_wording(self):
         self.assertEqual(missing_literals('原文：「有2个条件」', '有两个条件'), ['有2个条件'])
         self.assertEqual(missing_literals('原文：「有2个条件」', '有2个条件'), [])
         self.assertEqual(missing_literals('原话是「缓存」', '缓冲'), ['缓存'])
+        self.assertEqual(missing_literals('原文：「June 7, 2026」', '2026年6月7日'), ['June 7, 2026'])
 
     def test_markdown_and_punctuation_do_not_change_numeric_meaning(self):
         self.assertEqual(missing_literals('有2个条件', '- 两个条件'), [])

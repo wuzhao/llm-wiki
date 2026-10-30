@@ -2,7 +2,7 @@
 name: llm-wiki
 description: 管理由 raw/（含 raw/assets/ 附件）与 wiki/ 组成的本地 Markdown 知识库，用于初始化、素材摄入与更新、基于库内证据的查询、知识探索和健康维护。
 metadata:
-  version: 0.2.3
+  version: 0.2.4
   compatibility: macOS / Linux
 ---
 

@@ -53,6 +53,46 @@ PREFIX = "(?:" + "|".join(re.escape(q) for q in sorted(QUALIFIERS, key=len, reve
                           if not q.isascii()) + r"|>=|<=|>|<|~|(?i:\babout|\bapproximately|\baround|\bat least|\bat most|\bmore than|\bless than))"
 SUFFIX = r"(?:以上|以下|以内|左右|上下)"
 
+# Full dates are atomic. Numeric month/day order without a leading year remains
+# opaque, while named English months and Chinese 年/月/日 are unambiguous.
+MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December")
+MONTHS = {name.lower(): index for index, name in enumerate(MONTH_NAMES, 1)}
+MONTHS.update({name[:3].lower(): index for index, name in enumerate(MONTH_NAMES, 1)})
+MONTHS["sept"] = 9
+MONTH = "(?i:" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")\.?"
+DATE_DIGITS = "零〇一二三四五六七八九十"
+DATE_PART = rf"[0-9{DATE_DIGITS}]{{1,3}}"
+DATE_YEAR_GAP = r"(?:[ \t]*,[ \t]*|[ \t]+)"
+DATE = (
+    rf"(?:[0-9]{{4}}-[0-9]{{1,2}}-[0-9]{{1,2}}"
+    rf"|[0-9零〇一二三四五六七八九]{{4}}{SPACE}年{SPACE}{DATE_PART}{SPACE}月{SPACE}{DATE_PART}{SPACE}[日号]"
+    rf"|{MONTH}[ \t]+[0-9]{{1,2}}{DATE_YEAR_GAP}[0-9]{{4}}"
+    rf"|[0-9]{{1,2}}[ \t]+{MONTH}{DATE_YEAR_GAP}[0-9]{{4}}"
+    rf"|[0-9]{{1,2}}/[0-9]{{1,2}}/[0-9]{{4}})"
+)
+DATE_QUALIFIERS = {**QUALIFIERS, "早于": "before", "之前": "before", "以前": "before",
+                   "晚于": "after", "之后": "after", "以后": "after", "截至": "through",
+                   "不早于": "not-before", "不晚于": "not-after", "自": "from", "起": "from",
+                   "before": "before", "after": "after", "on or before": "not-after",
+                   "on or after": "not-before", "by": "through", "from": "from"}
+DATE_TOKEN = re.compile(
+    rf"(?<![A-Za-z0-9_.{CN}])(?:(?P<prefix>{PREFIX}|不早于|不晚于|截至|早于|晚于|自|[+\-正负]"
+    rf"|(?i:\bon or before|\bon or after|\bbefore|\bafter|\bby|\bfrom)){SPACE})?"
+    rf"(?P<date>{DATE})"
+    rf"(?:{SPACE}(?P<range>至|到|[-–—~～]|(?i:\bto\b)){SPACE}"
+    rf"(?P<end>{DATE}|[0-9]{{4}}-[0-9]{{1,2}}"
+    rf"|(?:[0-9{DATE_DIGITS}]{{4}}{SPACE}年{SPACE})?{DATE_PART}{SPACE}月(?:{SPACE}{DATE_PART}{SPACE}[日号])?"
+    rf"|{MONTH}[ \t]+[0-9]{{1,2}}(?![0-9])|[0-9]{{1,2}}[ \t]+{MONTH}"
+    rf"|[0-9{DATE_DIGITS}]{{1,4}}{SPACE}[年月日号]?|今|目前|现在))?"
+    rf"(?:{SPACE}(?P<suffix>{SUFFIX}|之前|之后|以前|以后|起))?"
+)
+LEXICAL_COUNT = re.compile(
+    r"一次性|二次(?:分配|引用|创作|转载|开发|传播|函数|方程)"
+    r"|[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)"
+)
+COMPOUND_UNIT = re.compile(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])")
+
 
 def endpoint(suffix):
     return (rf"(?:(?P<sign{suffix}>[+\-正负]){SPACE})?"
@@ -63,10 +103,10 @@ def endpoint(suffix):
 
 
 TOKEN = re.compile(
-    rf"(?<![A-Za-z0-9_.{CN}])(?:(?P<date>[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})(?![0-9])|"
+    rf"(?<![A-Za-z0-9_.{CN}])"
     rf"(?:(?P<prefix>{PREFIX}){SPACE})?{endpoint('1')}"
     rf"(?:{SPACE}(?P<range>至|到|[-–—~～]){SPACE}{endpoint('2')})?"
-    rf"(?:{SPACE}(?P<suffix>{SUFFIX}))?)"
+    rf"(?:{SPACE}(?P<suffix>{SUFFIX}))?"
 )
 
 
@@ -157,12 +197,45 @@ def number_value(text, unit):
     return (Fraction(integer) + Fraction(int(fraction), 10 ** len(fraction))) * scale
 
 
-def quantity_key(match):
-    if match["date"]:
-        try:
-            return ("date", date.fromisoformat(match["date"]))
-        except ValueError:
+def calendar_date(text):
+    iso = re.fullmatch(r"([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})", text)
+    chinese = re.fullmatch(rf"([0-9零〇一二三四五六七八九]{{4}}){SPACE}年{SPACE}"
+                          rf"({DATE_PART}){SPACE}月{SPACE}({DATE_PART}){SPACE}[日号]", text)
+    english = re.fullmatch(rf"({MONTH})[ \t]+([0-9]{{1,2}}){DATE_YEAR_GAP}([0-9]{{4}})", text)
+    day_first = re.fullmatch(rf"([0-9]{{1,2}})[ \t]+({MONTH}){DATE_YEAR_GAP}([0-9]{{4}})", text)
+    try:
+        if iso:
+            parts = [int(value) for value in iso.groups()]
+        elif chinese:
+            year = int("".join(str(DIGITS[c]) if c in DIGITS else c for c in chinese[1]))
+            parts = [year, *(int(value) if value.isascii() else chinese_integer(value) for value in chinese.groups()[1:])]
+        elif english:
+            parts = [int(english[3]), MONTHS[english[1].rstrip(".").lower()], int(english[2])]
+        elif day_first:
+            parts = [int(day_first[3]), MONTHS[day_first[2].rstrip(".").lower()], int(day_first[1])]
+        else:
             return None
+        return date(*parts)
+    except (TypeError, ValueError):
+        return None
+
+
+def date_key(match):
+    if match["prefix"] in ("+", "-", "正", "负"):
+        return None
+    values = [calendar_date(match["date"])]
+    if match["range"]:
+        values.append(calendar_date(match["end"]))
+    if any(value is None for value in values) or (len(values) == 2 and values[0] > values[1]):
+        return None
+    prefix = DATE_QUALIFIERS.get((match["prefix"] or "").lower(), "exact")
+    suffix = DATE_QUALIFIERS.get(match["suffix"], "exact")
+    if prefix != "exact" and suffix != "exact" and prefix != suffix:
+        return None
+    return ("date", prefix if prefix != "exact" else suffix, *values)
+
+
+def quantity_key(match):
     units = [match["unit1"] or ("%" if match["percent1"] else ""),
              match["unit2"] or ("%" if match["percent2"] else "")]
     if match["range"]:
@@ -193,19 +266,49 @@ def quantity_key(match):
     return (prefix if prefix != "exact" else suffix, *values)
 
 
+def nonquantitative_count(text, match):
+    # Only complete lexical forms and explicit selectors are excluded. Bare
+    # 一项/两条 and asserted counts such as 只有一人 or 重试两次 remain claims.
+    if match["range"] or match["prefix"] or match["suffix"] or match["sign1"] or match["percent1"]:
+        return False
+    if LEXICAL_COUNT.match(text, match.start()):
+        return True
+    return (match["number1"] == "一" and match["unit1"] in ("个", "条", "项", "种", "次", "人", "位", "家")
+            and re.search(r"[同另每某这那上下][ \t]*$", text[:match.start()]) is not None)
+
+
 def quantities(text):
     """Extract complete candidates, preserving unsupported forms for review."""
     normalized = text.translate(WIDTH)
     # Markdown list markers are not arithmetic signs. Keep offsets unchanged.
     normalized = re.sub(r"(?m)^([ \t]*)[-+](?=[ \t])", lambda m: m[1] + " ", normalized)
     result = []
-    for match in TOKEN.finditer(normalized):
+    numeric_text = list(normalized)
+    consumed_end = 0
+    for match in DATE_TOKEN.finditer(normalized):
+        if match.start() < consumed_end:
+            continue
+        compound = COMPOUND_UNIT.match(normalized, match.end())
+        end = compound.end() if compound else match.end()
+        consumed_end = end
+        following = normalized[match.end():match.end() + 1]
+        if not following or not re.match(rf"[A-Za-z0-9_{CN}]", following):
+            result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else date_key(match))))
+        # Keep a hard boundary so quantities cannot merge across a masked date.
+        numeric_text[match.start():end] = ";" + " " * (end - match.start() - 1)
+    numeric_text = "".join(numeric_text)
+    consumed_end = 0
+    for match in TOKEN.finditer(numeric_text):
+        if match.start() < consumed_end:
+            continue
         # Never accept a prefix of a larger numeric token or identifier.
         following = normalized[match.end():match.end() + 1]
         if (following and re.match(rf"[A-Za-z0-9_{CN}%]", following)
                 or re.match(r"\.[0-9]", normalized[match.end():])):
             continue
         number = match["number1"] or ""
+        if nonquantitative_count(normalized, match):
+            continue
         # Keep anchored amounts (四十多年, 百余项, 半小时) in scope even when
         # unsupported. Generic 多次/几十次 and unitless 一半 are not precise claims.
         endpoints = [(match[f"number{i}"] or "", match[f"unit{i}"]) for i in (1, 2)]
@@ -215,11 +318,12 @@ def quantities(text):
         bare_arabic = any(c.isdigit() for c in number) and (
             any(c in number for c in ".十百千万亿") or sum(c.isdigit() for c in number) >= 3)
         anchored_chinese = number.endswith(("多", "余")) and any(char in DIGITS for char in number)
-        if not (match["date"] or match["unit1"] or match["unit2"] or match["percent1"] or match["percent2"]
+        if not (match["unit1"] or match["unit2"] or match["percent1"] or match["percent2"]
                 or bare_arabic or anchored_chinese):
             continue
         # An unparsed compound unit must not supply its scalar prefix as evidence.
-        compound = re.match(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])", normalized[match.end():])
-        end = match.end() + (compound.end() if compound else 0)
-        result.append(Quantity(text[match.start():end].strip(), None if compound else quantity_key(match)))
-    return result
+        compound = COMPOUND_UNIT.match(normalized, match.end())
+        end = compound.end() if compound else match.end()
+        consumed_end = end
+        result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else quantity_key(match))))
+    return [quantity for _, quantity in sorted(result, key=lambda item: item[0])]
