@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 
 from markdown_links import blank, escaped, mask_non_prose
 from wiki_metadata import body_sha256, parse_datetime
+from wiki_numbers import quantities
 from wiki_sources import document_content_hash, latest_sources, load_documents, source_identity
 
 
@@ -11,10 +12,19 @@ def issue(level, problem, action, line=1, body_line=False):
     return {"level": level, "problem": problem, "action": action, "line": line, "is_auto": False, "_body_line": body_line}
 
 
+def quoted_literals(text):
+    return {value for pair in re.findall(r'「([^「」\n]+)」|"([^"\n]+)"', text) for value in pair if value}
+
+
 def claim_literals(text):
-    literals = set(re.findall(r"(?<![A-Za-z0-9_])(?:\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?\s*(?:%|ms|GB|MB|TB|毫秒|秒|倍|万|亿|年|条|个)|\d+\.\d+|\d{3,})(?![A-Za-z0-9_])", text))
-    literals.update(value for pair in re.findall(r'「([^「」\n]+)」|"([^"\n]+)"', text) for value in pair if value)
-    return literals
+    return {value.literal for value in quantities(text)} | quoted_literals(text)
+
+
+def missing_literals(text, evidence):
+    available = {value.key for value in quantities(evidence) if value.key is not None}
+    missing = {value.literal for value in quantities(text) if value.key is None or value.key not in available}
+    # Direct quotations still require the original wording, including digits.
+    return sorted(missing | {value for value in quoted_literals(text) if value not in evidence})
 
 
 class ProvenanceGraph:
@@ -169,7 +179,7 @@ class ProvenanceGraph:
                 targets = {by_id[key] for key in keys if by_id.get(key)}
                 raw_paths = {leaf for target in targets for leaf in self.walk(target)[0]}
                 evidence = "\n".join(self.raw[raw]["body"] for raw in sorted(raw_paths))
-                missing = sorted(value for value in claim_literals(text[cursor:attribution.start()]) if value not in evidence)
+                missing = missing_literals(text[cursor:attribution.start()], evidence)
                 if missing:
                     issues.append(issue("🟡", "原文未定位到数值或引文候选: " + ", ".join(missing), "人工核对语境；派生计算须列出有来源的分量，不自动更正事实", line, True))
                 cursor = attribution.end()

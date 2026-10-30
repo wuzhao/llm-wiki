@@ -82,6 +82,22 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertIn('来源 id 重复', result.stdout)
         self.assertIn('逐条引用没有对应来源 id', result.stdout)
 
+    def test_numeric_normalization_preserves_citation_scope_and_raw(self):
+        self.write('raw/a.md', '四十二毫秒，百分之一百五十，负百分之三点五。')
+        self.write('raw/b.md', '50%，3.5%。')
+        self.write('wiki/concepts/alpha.md',
+                   '延迟为 42ms。[^a]占比为 50%，变化为 3.5%。[^a]\n\n'
+                   '另一个结果为百分之五十。[^b]\n\n[^a]: A\n[^b]: B',
+                   sources=[{'id': 'a', 'resource': '../../raw/a.md'},
+                            {'id': 'b', 'resource': '../../raw/b.md'}])
+        before = snapshot(self.kb)
+        result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md', '--fail-on', 'error')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('原文未定位到数值或引文候选: 3.5%, 50%', result.stdout)
+        self.assertNotIn('原文未定位到数值或引文候选: 42ms', result.stdout)
+        self.assertNotIn('原文未定位到数值或引文候选: 百分之五十', result.stdout)
+        self.assertEqual(snapshot(self.kb), before)
+
     def test_values_are_bound_to_their_own_citations_in_one_paragraph(self):
         self.write('raw/a.md', '42ms')
         self.write('raw/b.md', '99ms')
