@@ -32,7 +32,7 @@
 ```yaml
 synthesis:
   reviewed_sha256: <synthesis_wiki.py 返回的本页检查指纹>
-  # reviewed_in: <参与到期回扫时工具返回的 review_id>
+  # reviewed_in: <实际完成本批检查时工具返回的 review_id>
   deferred:
     - name: 缓存失效
       type: concept
@@ -42,7 +42,7 @@ synthesis:
 ```
 
 - `reviewed_sha256` 覆盖摘要正文、标题、别名和来源引用，不包含 `synthesis` 自身；只能在实际检查后记录工具给出的当前值。
-- `reviewed_in` 记录本页实际参与的回扫轮次，工具据此恢复未完成批次。它不表示人工验证或独立证据数量。
+- `reviewed_in` 记录本页实际参与的检查轮次，局部检查与全库检查均填写工具的 `review_id`，用于避免同一证据范围反复检查。它不表示人工验证或独立证据数量。
 - `deferred` 必须是数组，无值得保留的候选时使用 `[]`。每项的 `name`、`type`、`reason` 和 `next_when` 必填；`type` 为 `entity` 或 `concept`，可选 `aliases` 为字符串数组。
 - 字段缺失的旧摘要进入待检查清单，不自动补齐；字段格式错误或指纹不一致按 `lint-policy.md` 报告，禁止自动伪造检查记录。具体触发与建页标准见 `synthesis-policy.md`。
 
@@ -64,6 +64,7 @@ synthesis:
 - `timestamp` 表示采集时间，是 LLM Wiki 自定义字段，不是 OKF 0.2 推荐字段。
 - `source_id`、`source_version`、`supersedes` 分别记录来源身份、版本与前一快照的知识库相对路径；`content_sha256` 用于相同内容提醒，`body_sha256` 用于检测 raw 正文是否改变。
 - URL 的 `source_snapshot` 使用知识库相对路径，指向 `raw/assets/` 中的原始响应；`source_snapshot_sha256` 校验响应字节，`source_media_type`、`source_encoding`、`resolved_url` 与 `extraction_version` 描述提取过程；这些都是本项目扩展。
+- 附件提取文本通过 `--attachment` 关联已保存原件，复用 `source_snapshot` 和 `source_snapshot_sha256`；不为人工提取伪造 URL、编码或提取器版本。
 - lint 不要求 raw 提供 wiki profile 的 `description`、`tags`、`generated`、`verified`、`status` 或 `stale_after`。
 - 首次摄入正常生成元数据；既有 raw 正文连同链接、空白和换行保持只读。显式 `lint --fix` 仅补齐可确定的 `type` 与 `title`，保留来源地址、采集时间及未知字段。其他元数据纠正须有来源依据并记录日志，不能猜测地址或时间。
 
@@ -75,6 +76,8 @@ synthesis:
 ## 链接扩展
 
 OKF 0.2 推荐标准 Markdown 链接。LLM Wiki 同时支持 Obsidian Wikilink 作为本地扩展；可移植性优先的内容应使用标准 Markdown 的 bundle-root 绝对路径或相对路径。
+
+wiki 内的 `/concepts/example.md` 指向 `wiki/concepts/example.md`。以配置中 raw、assets 或 wiki 根路径开头的绝对链接保留知识库根语义，例如 `/raw/source.md`、`/wiki/concepts/example.md`；其他相对路径以当前文件所在目录解析。正文与 `sources[].resource` 共用此规则，Wikilink 沿用既有规则。
 
 ## 示例
 

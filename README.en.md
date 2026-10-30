@@ -111,7 +111,7 @@ concept pages when the evidence supports them; retain deferred topics
 with their reasons and the information needed to revisit them.
 ```
 
-The first synthesis pass reviews the existing backlog. Later rounds run during ingestion when the configured interval is reached. Page creation depends on useful evidence, not mention counts or a quota.
+The first synthesis pass reviews the existing backlog. Later ingestion reviews changed summaries, affected dependencies, and deferred topics matched by new evidence. Explicit synthesis requests can still review the full corpus. Page creation depends on useful evidence, not mention counts or a quota.
 
 ### Check and repair
 
@@ -192,7 +192,7 @@ query / explore
           [Answer with citations / Research directions]
 ```
 
-Ingest uses source identity and actual changes to choose initial capture or a version update; matching titles do not establish identity. Pasted-text revisions need an existing source identity, supplied by the agent through `--source-id`. An unchanged source that was fully processed returns its existing pages. If summary compilation, topic checks, or propagation of a prior update were unfinished, the agent completes that work. Every ingestion checks core entities, concepts, and related older summaries. Sufficient evidence leads to a page update or creation; deferred topics remain recorded in summary metadata. The read-only `synthesis_wiki.py` tool lists review batches and resumes progress from summaries and log checkpoints. Duplicate source content does not advance the interval.
+Ingest uses source identity and actual changes to choose initial capture or a version update; matching titles do not establish identity. Pasted-text revisions need an existing source identity, supplied by the agent through `--source-id`. An unchanged source that was fully processed returns its existing pages. If summary compilation, topic checks, or propagation of a prior update were unfinished, the agent completes that work. Every ingestion checks core entities, concepts, and related older summaries. Sufficient evidence leads to a page update or creation; deferred topics remain recorded in summary metadata. The read-only `synthesis_wiki.py` tool returns batch details and resumes progress from summaries and incremental log checkpoints; unchanged, unrelated summaries are not reread just because an interval is reached. Duplicate source content does not advance the interval.
 
 For source revisions, the agent combines dependency records with full-text search to review affected claims. Current findings, history, and unresolved conflicts remain distinct. Archived analyses retain their historical text and are flagged for review when dependencies change. Queries read candidate pages in batches and trace important numbers, quotations, and conflicts back to raw sources.
 
@@ -216,6 +216,8 @@ The policies and templates currently use Chinese, with some headings and index c
 
 ### Operational boundaries
 
+Attachments can be stored byte-for-byte and linked to separately extracted text. Missing external source files produce warnings by default; damaged stored snapshots remain errors. Use `lint --strict-sources` when external source availability must block validation.
+
 - Extraction preserves code, links, and simple HTML tables; complex tables retain HTML. The fetcher does not execute JavaScript, download page images, or extract PDF and other binary attachment contents. Supply usable text when needed.
 - Existing raw bodies are read-only. `lint --fix` only fills determinable `type` and `title` fields there. Other metadata corrections require source evidence and a log record.
 - Structural validity and a matching number do not prove a claim. Reading can continue across batches; disclose unreadable content and distinguish partial results from conclusions about the whole wiki.
@@ -229,7 +231,7 @@ The policies and templates currently use Chinese, with some headings and index c
 | ----------- | ------- |
 | [SKILL.md](SKILL.md) | Task routing and core guardrails |
 | [Policy index](references/README.md) | Workflow rules |
-| [Synthesis policy](references/synthesis-policy.md) | Page criteria, deferred topics, and periodic review |
+| [Synthesis policy](references/synthesis-policy.md) | Page criteria, deferred topics, and incremental review |
 | [Preflight](references/preflight.md) | Workspace, skill, knowledge base, and tool paths |
 | [Provenance and updates](references/provenance-policy.md) | Citations, source versions, and change propagation |
 | [Lint policy](references/lint-policy.md) | Write checks and safe repair scope |

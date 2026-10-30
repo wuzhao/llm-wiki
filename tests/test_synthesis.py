@@ -9,7 +9,7 @@ import yaml
 
 from kb_fixture import ROOT, initialize_kb, snapshot, unreadable_directory
 from synthesis_wiki import CHECKPOINT_PREFIX, build_plan
-from test_lint_wiki import page
+from kb_fixture import page
 from wiki_config import load_schema
 from wiki_metadata import split_frontmatter
 
@@ -46,7 +46,7 @@ class SynthesisTests(unittest.TestCase):
     def mark_batch(self, plan, deferred=None):
         for item in plan["batch"]:
             state = {"reviewed_sha256": item["reviewed_sha256"], "deferred": deferred or []}
-            if plan["due"]:
+            if plan["review_id"]:
                 state["reviewed_in"] = plan["review_id"]
             self.change_metadata(item["path"], synthesis=state)
 
@@ -126,7 +126,7 @@ class SynthesisTests(unittest.TestCase):
         plan = build_plan(self.kb, self.schema)
         self.assertTrue(plan["due"])
         self.assertEqual(plan["reason"], "interval")
-        self.assertEqual(plan["remaining"], interval + 1)
+        self.assertEqual(plan["remaining"], 1)
         self.finish_round()
         self.assertEqual(list((self.kb / "wiki/entities").iterdir()), [])
         self.assertEqual(list((self.kb / "wiki/concepts").iterdir()), [])
@@ -199,7 +199,7 @@ class SynthesisTests(unittest.TestCase):
                      "reason": "Only mentioned", "next_when": "A strategy or example becomes available"}
         plan = build_plan(self.kb, self.schema)
         self.mark_batch(plan, [candidate])
-        plan = build_plan(self.kb, self.schema)
+        plan = build_plan(self.kb, self.schema, details=True)
         self.assertEqual(plan["deferred"], [{**candidate, "summary": relative}])
         self.assertEqual(plan["remaining"], 0)
         self.assertIsNotNone(plan["checkpoint_record"])
@@ -277,6 +277,74 @@ class SynthesisTests(unittest.TestCase):
         self.assertNotEqual(old["review_id"], current["review_id"])
         self.assertEqual(current["remaining"], 2)
         self.assertIsNone(current["checkpoint_record"])
+
+    def test_interval_only_reviews_relevant_pages_and_checkpoints_only_new_hashes(self):
+        old = {self.add_summary(f"stable-{number}") for number in range(20)}
+        first = self.finish_round()
+        first_record = json.loads(first["checkpoint_record"][len(CHECKPOINT_PREFIX):-4])
+        self.assertEqual(first_record["version"], 2)
+        self.assertEqual(len(first_record["added_fingerprints"]), len(old))
+        interval = self.schema["limits"]["synthesis_review_interval"]
+        new = {self.add_summary(f"new-{number}") for number in range(interval)}
+        plan = build_plan(self.kb, self.schema)
+        self.assertEqual({item["path"] for item in plan["batch"]}, new)
+        self.assertFalse(set(plan["fingerprints"]) & old)
+        self.assertEqual(plan["remaining"], len(new))
+        completed = self.finish_round()
+        record = json.loads(completed["checkpoint_record"][len(CHECKPOINT_PREFIX):-4])
+        self.assertEqual(record["previous"], first["review_id"])
+        self.assertEqual(len(record["added_fingerprints"]), len(new))
+        self.assertFalse(set(record["added_fingerprints"]) & set(first_record["added_fingerprints"]))
+        self.assertEqual(build_plan(self.kb, self.schema)["new_source_contents"], 0)
+        forced = self.finish_round(force=True)
+        self.assertEqual(json.loads(forced["checkpoint_record"][len(CHECKPOINT_PREFIX):-4])["added_fingerprints"], [])
+
+    def test_new_evidence_reopens_matching_deferred_candidate_before_interval(self):
+        old = self.add_summary("mention", "The earlier material mentions caching.")
+        candidate = {"name": "Cache invalidation", "type": "concept", "aliases": ["缓存失效"],
+                     "reason": "Mention only", "next_when": "A mechanism is explained"}
+        self.mark_batch(build_plan(self.kb, self.schema), [candidate])
+        self.append_checkpoint(build_plan(self.kb, self.schema)["checkpoint_record"])
+        new = self.add_summary("mechanism", "缓存失效 uses explicit invalidation events.")
+        plan = build_plan(self.kb, self.schema)
+        self.assertFalse(plan["due"])
+        self.assertEqual({entry["path"] for entry in plan["batch"]}, {old, new})
+        self.assertIn("deferred-evidence-match", next(item for item in plan["batch"] if item["path"] == old)["reasons"])
+        self.mark_batch(plan)
+        self.assertEqual(build_plan(self.kb, self.schema)["remaining"], 0)
+
+    def test_legacy_checkpoints_upgrade_by_appending_deltas(self):
+        self.add_summary("legacy")
+        self.mark_batch(build_plan(self.kb, self.schema))
+        first = build_plan(self.kb, self.schema)
+        value = json.loads(first["checkpoint_record"][len(CHECKPOINT_PREFIX):-4])
+        legacy = {"version": 1, "review_id": value["review_id"], "fingerprints": value["added_fingerprints"]}
+        self.append_checkpoint(CHECKPOINT_PREFIX + json.dumps(legacy) + " -->")
+        history = self.log.read_bytes()
+        for number in range(self.schema["limits"]["synthesis_review_interval"]):
+            self.add_summary(f"new-{number}")
+        self.finish_round()
+        self.assertTrue(self.log.read_bytes().startswith(history))
+        self.assertEqual(build_plan(self.kb, self.schema)["new_source_contents"], 0)
+
+    def test_delta_chain_gap_cannot_appear_complete(self):
+        self.add_summary("original")
+        self.finish_round()
+        self.append_checkpoint(CHECKPOINT_PREFIX + json.dumps({"version": 2, "review_id": "b" * 64,
+                               "previous": "a" * 64, "added_fingerprints": []}) + " -->")
+        plan = build_plan(self.kb, self.schema, force=True)
+        self.assertTrue(plan["read_errors"])
+        self.assertIsNone(plan["checkpoint_record"])
+
+    def test_default_output_is_limited_to_batch_details(self):
+        size = self.schema["limits"]["max_query_read_pages"]
+        for number in range(size + 3):
+            self.add_summary(f"page-{number}")
+        plan = build_plan(self.kb, self.schema)
+        self.assertEqual(len(plan["fingerprints"]), size)
+        self.assertEqual(len(plan["unreviewed"]), size)
+        self.assertEqual(plan["unreviewed_count"], size + 3)
+        self.assertEqual(len(build_plan(self.kb, self.schema, details=True)["fingerprints"]), size + 3)
 
 
 if __name__ == "__main__":

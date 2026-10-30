@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kb_fixture import ROOT
-from wiki_io import atomic_write_text, create_unique_text
+from wiki_io import WritePlan, atomic_write_text, create_unique_text
 
 
 class WikiIOTests(unittest.TestCase):
@@ -43,3 +43,17 @@ class WikiIOTests(unittest.TestCase):
             target.chmod(0o640)
             atomic_write_text(target, "updated")
             self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+
+    def test_stale_plan_does_not_overwrite_newer_content_or_other_pages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "a.md").write_text("original a")
+            (root / "b.md").write_text("new user edit")
+            plan = WritePlan({"a.md": "fixed a", "b.md": "fixed b"},
+                             {"a.md": "original a", "b.md": "original b"})
+            written = []
+            with self.assertRaisesRegex(OSError, "页面在扫描后已变化"):
+                plan.apply(root, written)
+            self.assertEqual(written, [])
+            self.assertEqual((root / "a.md").read_text(), "original a")
+            self.assertEqual((root / "b.md").read_text(), "new user edit")

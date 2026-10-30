@@ -89,6 +89,9 @@ def store_material(kb_dir, raw_destination, base_name, content, metadata, captur
         fingerprint = content_sha256(content)
         previous_metadata = documents[previous]["metadata"] if previous else {}
         same_capture = (not metadata.get("source_file_sha256") or metadata["source_file_sha256"] == previous_metadata.get("source_file_sha256"))
+        if metadata.get("source_snapshot"):
+            same_capture = same_capture and all(metadata.get(key) == previous_metadata.get(key)
+                                                for key in ("source_snapshot", "source_snapshot_sha256"))
         if previous_metadata.get("body_sha256"):
             same_capture = same_capture and previous_metadata["body_sha256"] == body_sha256(documents[previous]["body"])
         if capture:
@@ -160,12 +163,15 @@ def main():
     source_group.add_argument("--text", help="Direct text content to ingest")
     parser.add_argument("--title", help="Title of the material")
     parser.add_argument("--source-id", help="Reuse an explicit source identity for pasted-text revisions")
+    parser.add_argument("--attachment", help="Existing raw/assets path for the original attachment of extracted text")
     
     args = parser.parse_args()
     if args.text is not None and not (args.title or "").strip():
         parser.error("使用 --text 时必须同时提供 --title")
     if args.source_id is not None and (args.text is None or not args.source_id.strip()):
         parser.error("--source-id 仅用于为粘贴文本指定非空来源身份")
+    if args.attachment and args.url:
+        parser.error("--attachment 仅用于本地提取文本或粘贴文本，URL 自行保存响应快照")
     kb_dir = os.path.abspath(args.kb_dir)
     try:
         schema = load_schema()
@@ -176,6 +182,21 @@ def main():
     missing = validate_structure(kb_dir, schema)
     if missing:
         parser.error("知识库结构不完整: " + ", ".join(missing) + "；请先执行初始化 workflow")
+
+    attachment_metadata = {}
+    if args.attachment:
+        try:
+            attachment = resolve_within(kb_dir, args.attachment)
+            if not attachment.is_relative_to(resolve_within(kb_dir, schema["paths"]["assets"])) or not attachment.is_file():
+                raise ValueError("附件必须是 raw/assets 内现存的文件")
+            with attachment.open("rb") as stream:
+                data = stream.read(schema["limits"]["max_source_bytes"] + 1)
+            if not data or len(data) > schema["limits"]["max_source_bytes"]:
+                raise ValueError("附件为空或超过 max_source_bytes")
+            attachment_metadata = {"source_snapshot": attachment.relative_to(Path(kb_dir).resolve()).as_posix(),
+                                   "source_snapshot_sha256": hashlib.sha256(data).hexdigest()}
+        except (OSError, ValueError, SchemaError) as exc:
+            parser.error(f"原始附件无效: {exc}")
         
     content = ""
     title = args.title or ""
@@ -231,7 +252,10 @@ def main():
         metadata["source_file_path"] = source_file_path
         metadata["source_file_sha256"] = source_file_sha256
     if args.text is not None:
-        metadata["source_id"] = args.source_id.strip() if args.source_id else "text:" + content_sha256(content)
+        default_id = ("attachment:" + attachment_metadata["source_snapshot_sha256"] if attachment_metadata
+                      else "text:" + content_sha256(content))
+        metadata["source_id"] = args.source_id.strip() if args.source_id else default_id
+    metadata.update(attachment_metadata)
     
     try:
         filepath = store_material(kb_dir, raw_destination, base_name, content, metadata, capture, schema)

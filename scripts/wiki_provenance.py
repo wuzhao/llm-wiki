@@ -74,6 +74,15 @@ class ProvenanceGraph:
         generated = metadata.get("generated")
         return parse_datetime(generated.get("at")) if isinstance(generated, dict) else None
 
+    def dependency_drift(self, path):
+        reachable, queue = {path}, [path]
+        while queue:
+            for target in self.current_edges[queue.pop()]:
+                if target not in reachable:
+                    reachable.add(target)
+                    queue.append(target)
+        return sorted({reason for upstream in reachable for reason in self.drift[upstream]})
+
     def walk(self, start):
         if start in self.walk_cache:
             return self.walk_cache[start]
@@ -113,14 +122,7 @@ class ProvenanceGraph:
             issues.append(issue("🔴", "来源链存在循环引用", "核对派生关系并补充原始证据，不自动改写"))
         if entries and not leaves:
             issues.append(issue("🟡", "来源链未到达 raw 原始快照", "保留外部出处，并补充可回查的 raw 快照"))
-        current_reachable = {path}
-        queue = [path]
-        while queue:
-            for target in self.current_edges[queue.pop()]:
-                if target not in current_reachable:
-                    current_reachable.add(target)
-                    queue.append(target)
-        reasons = sorted({reason for upstream in current_reachable for reason in self.drift[upstream]})
+        reasons = self.dependency_drift(path)
         if reasons:
             snapshot = path.startswith(self.schema["paths"]["analyses"] + "/")
             action = "归档快照仅标记待复核，不覆盖历史结论" if snapshot else "核对受影响结论并更新来源快照，保留历史及冲突"

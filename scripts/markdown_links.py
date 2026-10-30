@@ -11,42 +11,56 @@ def blank(text):
 
 
 def mask_non_prose(content):
+    """Mask syntax in context; comment markers inside code are literal text."""
     text = re.sub(r"\A\ufeff?---\r?\n.*?\r?\n---(?:\r?\n|$)",
                   lambda m: blank(m.group()), content, count=1, flags=re.S)
-    text = re.sub(r"<!--.*?(?:-->|\Z)", lambda m: blank(m.group()), text, flags=re.S)
-    lines = []
-    fence = None
-    for line in text.splitlines(keepends=True):
-        inner = re.sub(r"^(?: {0,3}>[ \t]?)+", "", line)
-        marker = re.match(r"^\s*(?:[-+*] |\d+[.)] )?(`{3,}|~{3,})(.*)$", inner)
-        if fence:
-            lines.append(blank(line))
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
-                fence = None
-        elif marker:
-            fence = (marker[1][0], len(marker[1]))
-            lines.append(blank(line))
-        elif inner.startswith(("    ", "\t")):
-            lines.append(blank(line))
-        else:
-            lines.append(line)
-    text = "".join(lines)
-    # A code span closes only on a backtick run of the same length.
-    matches = list(re.finditer(r"(?<!\\)`+", text))
     edits = []
-    index = 0
-    while index < len(matches):
-        opening = matches[index]
-        closing = next((j for j in range(index + 1, len(matches))
-                        if len(matches[j].group()) == len(opening.group())), None)
-        if closing is None:
-            index += 1
-        else:
-            edits.append((opening.start(), matches[closing].end()))
-            index = closing + 1
-    for start, end in reversed(edits):
-        text = text[:start] + blank(text[start:end]) + text[end:]
-    return text
+    fence = None
+    position = 0
+    while position < len(text):
+        if position == 0 or text[position - 1] == "\n":
+            end = text.find("\n", position)
+            end = len(text) if end < 0 else end + 1
+            line = text[position:end]
+            inner = re.sub(r"^(?: {0,3}>[ \t]?)+", "", line)
+            marker = re.match(r"^\s*(?:[-+*] |\d+[.)] )?(`{3,}|~{3,})(.*)$", inner)
+            if fence or marker or inner.startswith(("    ", "\t")):
+                if fence:
+                    if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
+                        fence = None
+                elif marker:
+                    fence = (marker[1][0], len(marker[1]))
+                edits.append((position, end))
+                position = end
+                continue
+        if text.startswith("<!--", position) and not escaped(text, position):
+            end = text.find("-->", position + 4)
+            end = len(text) if end < 0 else end + 3
+            edits.append((position, end))
+            position = end
+            continue
+        if text[position] == "`" and not escaped(text, position):
+            opening = re.match(r"`+", text[position:])[0]
+            start = position + len(opening)
+            # Code spans cannot consume a new paragraph or a fenced code block.
+            boundary = re.search(r"\n[ \t]*\n|\n {0,3}(?:`{3,}|~{3,})", text[start:])
+            end = start + boundary.start() if boundary else len(text)
+            closing = re.search(r"(?<!`)" + re.escape(opening) + r"(?!`)", text[start:end])
+            if closing:
+                end = start + closing.end()
+                edits.append((position, end))
+                position = end
+                continue
+            position = start
+            continue
+        position += 1
+    chunks = []
+    previous = 0
+    for start, end in edits:
+        chunks.extend((text[previous:start], blank(text[start:end])))
+        previous = end
+    chunks.append(text[previous:])
+    return "".join(chunks)
 
 
 def escaped(text, index):

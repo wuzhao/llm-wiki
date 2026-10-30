@@ -9,36 +9,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from wiki_config import load_markdown_template, load_schema
+import yaml
 
-
-def initialize_kb(directory):
-    directory = Path(directory)
-    schema = load_schema()
-    now = datetime.datetime.now(datetime.timezone.utc)
-    for relative in schema["required_paths"]:
-        path = directory / relative
-        if path.suffix == ".md":
-            path.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            path.mkdir(parents=True, exist_ok=True)
-    (directory / "AGENTS.md").write_text((ROOT / "templates/AGENTS-template.md").read_text(), encoding="utf-8")
-    files = {
-        schema["paths"]["index"]: "index-template.md",
-        schema["paths"]["overview"]: "overview-template.md",
-        f"{schema['paths']['logs']}/{now:%Y%m}.md": "log-template.md",
-    }
-    for relative, template in files.items():
-        content = load_markdown_template(template)
-        for old, new in {
-            "YYYY-MM-DDTHH:MM:SSZ": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "YYYY 年 MM 月": now.strftime("%Y 年 %m 月"),
-            "YYYY-MM-DD": now.strftime("%Y-%m-%d"),
-            "YYYY-MM": now.strftime("%Y-%m"),
-        }.items():
-            content = content.replace(old, new)
-        (directory / relative).write_text(content, encoding="utf-8")
-    return directory
+from init_wiki import initialize_kb
 
 
 def snapshot(directory):
@@ -59,3 +32,23 @@ def unreadable_directory(directory):
 
     with patch("os.scandir", scandir):
         yield
+
+
+NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def markdown(metadata, body):
+    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip()
+    return f"---\n{frontmatter}\n---\n\n{body.rstrip()}\n"
+
+
+def page(document_type, title, body, generated_at=NOW, **extra):
+    metadata = {
+        "type": document_type,
+        "title": title,
+        "description": f"{title} 的测试页面。",
+        "tags": ["test"],
+        "generated": {"by": "llm-wiki-test/0.1.0", "at": generated_at},
+    }
+    metadata.update(extra)
+    return markdown(metadata, body)

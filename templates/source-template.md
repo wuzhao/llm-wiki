@@ -7,7 +7,7 @@ title: <素材标题>
 description: <一句话摘要>
 resource: <原文 URL 或原始路径>
 tags: [source, tag1, tag2]
-generated: { by: llm-wiki/0.2.0, at: YYYY-MM-DDTHH:MM:SSZ }
+generated: { by: "llm-wiki/{{SKILL_VERSION}}", at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 # verified:
 #   - { by: human:<id>, at: YYYY-MM-DDTHH:MM:SSZ }

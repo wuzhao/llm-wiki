@@ -3,8 +3,31 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from dataclasses import dataclass
 
 from wiki_config import SchemaError, resolve_within
+
+
+@dataclass
+class WritePlan:
+    replacements: dict
+    originals: dict
+
+    def apply(self, kb_dir, written):
+        # Validate the complete plan before changing any page. Recheck each page
+        # at commit time as well, so stale scans do not overwrite intervening edits.
+        for relative in self.replacements:
+            self._unchanged(kb_dir, relative)
+        for relative, content in self.replacements.items():
+            destination = self._unchanged(kb_dir, relative)
+            atomic_write_text(destination, content)
+            written.append(relative)
+
+    def _unchanged(self, kb_dir, relative):
+        destination = checked_destination(kb_dir, relative)
+        if destination.read_bytes().decode("utf-8") != self.originals[relative]:
+            raise OSError(f"页面在扫描后已变化，未覆盖: {relative}")
+        return destination
 
 
 def checked_destination(kb_dir, relative):

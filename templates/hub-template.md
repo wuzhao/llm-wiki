@@ -6,7 +6,7 @@ type: hub
 title: <主题名称>
 description: <主题范围与导航说明>
 tags: [hub]
-generated: { by: llm-wiki/0.2.0, at: YYYY-MM-DDTHH:MM:SSZ }
+generated: { by: "llm-wiki/{{SKILL_VERSION}}", at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 sources: []
 ---

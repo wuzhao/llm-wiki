@@ -24,16 +24,18 @@ from wiki_config import (
     index_section_for,
     infer_document_type,
     is_asset_path,
-    load_markdown_template,
+    render_markdown_template,
     load_schema,
     resolve_within,
     validate_structure,
 )
-from wiki_io import atomic_write_text, checked_destination
+from wiki_io import WritePlan, atomic_write_text, checked_destination
+from wiki_scan import load_snapshot
+from wiki_lint_report import build_report
 from markdown_links import mask_non_prose, standard_link_occurrences, standard_link_spans, wikilink_spans, unescape_target
 from wiki_links import build_target_index, is_allowed_target, resolve_standard_link, resolve_wikilink
 from wiki_metadata import body_sha256, parse_datetime, split_frontmatter
-from wiki_sources import latest_sources, load_documents, source_identity, walk_visible_files
+from wiki_sources import latest_sources, source_identity, walk_visible_files
 from synthesis_wiki import review_fingerprint, validate_synthesis
 from wiki_provenance import ProvenanceGraph
 
@@ -74,10 +76,6 @@ def set_frontmatter_value(frontmatter, key, value):
     return frontmatter + replacement
 
 
-def replace_frontmatter_scalar(frontmatter, key, value):
-    return set_frontmatter_value(frontmatter, key, value)
-
-
 def h1_title(body, filepath):
     match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
     if match:
@@ -96,7 +94,7 @@ def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=Fal
             return content, issues, metadata, body
         expected_version = schema["okf_version"]
         if metadata.get("okf_version") != expected_version:
-            frontmatter = replace_frontmatter_scalar(frontmatter, "okf_version", expected_version)
+            frontmatter = set_frontmatter_value(frontmatter, "okf_version", expected_version)
             metadata["okf_version"] = expected_version
             issues.append(make_issue(
                 "🔴",
@@ -197,7 +195,7 @@ def file_sha256(filepath):
     return digest.hexdigest()
 
 
-def check_source_file_integrity(relative_path, metadata, kb_dir, schema, latest=None):
+def check_source_file_integrity(relative_path, metadata, kb_dir, schema, latest=None, strict=False):
     raw_prefix = f"{schema['paths']['raw']}/"
     if not relative_path.startswith(raw_prefix):
         return []
@@ -216,13 +214,14 @@ def check_source_file_integrity(relative_path, metadata, kb_dir, schema, latest=
     if not source_path.is_absolute():
         source_path = Path(kb_dir) / source_path
     if not source_path.exists():
-        return [make_issue("🔴", f"原始文件不可访问: {source_path}", "需重新投喂该文件")]
+        return [make_issue("🔴" if strict else "🟡", f"原始文件不可访问: {source_path}",
+                           "库内 raw 快照仍可核验；恢复来源路径后再检查外部更新")]
     if not expected_sha256:
         return []
     try:
         current_sha256 = file_sha256(source_path)
     except OSError as exc:
-        return [make_issue("🟡", f"原始文件无法读取: {source_path}", f"需重新投喂该文件（{exc}）")]
+        return [make_issue("🔴" if strict else "🟡", f"原始文件无法读取: {source_path}", f"恢复来源读取后再检查外部更新（{exc}）")]
     if current_sha256 != expected_sha256:
         return [make_issue("🟡", f"与当前原始文件不一致: {source_path}", "需重新投喂该文件")]
     return []
@@ -290,10 +289,6 @@ def fragment_exists(relative_target, fragment, target_index):
     return normalized in exact or normalized in slugs
 
 
-def mask_code(content):
-    return mask_non_prose(content)
-
-
 def line_number(content, offset):
     return content.count("\n", 0, offset) + 1
 
@@ -327,7 +322,7 @@ def scan_links(source_relative, content, target_index, schema, apply_fixes=False
     issues = []
     resolved_targets = set()
     replacements = []
-    masked = mask_code(content)
+    masked = mask_non_prose(content)
     spans = [(start, end, False) for start, end in standard_link_spans(masked)]
     spans += [(start, end, True) for start, end in wikilink_spans(masked)]
     for start, end, is_wiki in sorted(set(spans)):
@@ -536,18 +531,6 @@ def heuristic_checks(relative_path, body, metadata, schema):
     return issues
 
 
-def format_issue_location(relative_path, line=None):
-    escaped = relative_path.replace("|", "\\|")
-    return f"[[{escaped}]]:{line}" if line else f"[[{escaped}]]"
-
-
-def format_report_item(relative_path, issue, action_label="修改建议"):
-    item = f"- {issue['level']} {format_issue_location(relative_path, issue['line'])}\n  发现问题：{issue['problem']}"
-    if issue["action"]:
-        item += f"\n  {action_label}：{issue['action']}"
-    return item
-
-
 def add_index_entries(content, missing_pages, metadata_by_path, schema):
     issues = []
     grouped = defaultdict(list)
@@ -637,136 +620,17 @@ def prepare_log(kb_dir, schema):
     now = datetime.datetime.now(datetime.timezone.utc)
     relative = f"{schema['paths']['logs']}/{now:%Y%m}.md"
     log_path = checked_destination(kb_dir, relative)
-    template = load_markdown_template("log-template.md")
-    for placeholder, value in {
-        "YYYY-MM-DDTHH:MM:SSZ": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "YYYY 年 MM 月": now.strftime("%Y 年 %m 月"),
-        "YYYY-MM": now.strftime("%Y-%m"),
-    }.items():
-        template = template.replace(placeholder, value)
+    template = render_markdown_template("log-template.md", now)
     return log_path, template
 
 
-def main():
-    parser = argparse.ArgumentParser(description="LLM Wiki Lint Tool")
-    parser.add_argument("kb_dir", help="Path to the knowledge base directory")
-    scope = parser.add_mutually_exclusive_group()
-    scope.add_argument("--lint-dirs", nargs="*", help="Directories to lint, relative to kb_dir")
-    scope.add_argument("--lint-files", nargs="+", help="Markdown files to lint, relative to kb_dir; always includes index")
-    parser.add_argument("--index-file", help="Index file path, relative to kb_dir")
-    parser.add_argument("--fix", action="store_true", help="Enable safe deterministic auto-fixes")
-    parser.add_argument("--dry-run", action="store_true", help="Preview fixes without writing")
-    parser.add_argument("--report-file", help="Path to save the markdown report")
-    parser.add_argument("--fail-on", choices=("error", "warning", "any"),
-                        help="Exit 1 when unresolved issues meet this severity threshold")
-    args = parser.parse_args()
-
-    try:
-        schema = load_schema()
-    except SchemaError as exc:
-        parser.error(str(exc))
-    kb_dir = Path(args.kb_dir).resolve()
-    if not kb_dir.exists():
-        parser.error(f"知识库目录不存在: {kb_dir}")
-
-    missing = validate_structure(kb_dir, schema)
-    if missing:
-        parser.error("知识库结构不完整: " + ", ".join(missing))
-
-    lint_dirs = [] if args.lint_files else (args.lint_dirs or [schema["paths"]["wiki"], schema["paths"]["raw"]])
-    index_relative = args.index_file or schema["paths"]["index"]
-    try:
-        lint_roots = [resolve_within(kb_dir, path) for path in lint_dirs]
-        selected_files = [resolve_within(kb_dir, path) for path in args.lint_files or []]
-        index_path = resolve_within(kb_dir, index_relative)
-    except SchemaError as exc:
-        parser.error(str(exc))
-    index_relative = index_path.relative_to(kb_dir).as_posix()
-    if not index_path.is_file() or not index_relative.startswith(schema["paths"]["wiki"] + "/"):
-        parser.error("index 必须是 wiki 内已存在的文件")
-    if index_relative.startswith(schema["paths"]["logs"] + "/"):
-        parser.error("历史日志不能用作 index")
-    missing_lint_roots = [str(path) for path in lint_roots if not path.is_dir()]
-    if missing_lint_roots:
-        parser.error("lint 目录不存在: " + ", ".join(missing_lint_roots))
-    assets_root = resolve_within(kb_dir, schema["paths"]["assets"])
-    if any(path.is_relative_to(assets_root) for path in lint_roots):
-        parser.error(f"lint 目录不能位于附件目录 {schema['paths']['assets']} 内")
-    for path in selected_files:
-        relative = path.relative_to(kb_dir).as_posix()
-        if (not path.is_file() or path.suffix.casefold() != ".md"
-                or is_asset_path(relative, schema)
-                or not relative.startswith((schema["paths"]["wiki"] + "/", schema["paths"]["raw"] + "/"))):
-            parser.error(f"lint 文件必须是 raw 或 wiki 内已存在的 Markdown 文件，附件除外: {relative}")
-
-    write_enabled = args.fix and not args.dry_run
-    if write_enabled:
-        try:
-            prepare_log(kb_dir, schema)
-        except (SchemaError, TemplateError, OSError) as exc:
-            parser.error(str(exc))
-    target_index = build_target_index(kb_dir, schema)
+def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_relative, write_enabled, strict_sources, all_issues):
+    documents = snapshot.documents
+    text_cache, read_content = snapshot.text, snapshot.read
     scan_errors = target_index["scan_errors"]
-    report_path = Path(args.report_file).absolute() if args.report_file else None
-    if report_path:
-        report_target = report_path.resolve()
-        if (report_path.is_symlink() or is_allowed_target(report_target, target_index)
-                or report_target == kb_dir / "AGENTS.md"):
-            parser.error("报告路径必须位于 raw、wiki 之外，且不能覆盖 AGENTS.md 或符号链接")
-    markdown_files = set(selected_files)
-    if args.lint_files:
-        markdown_files.add(index_path)
-    for root in lint_roots:
-        for path in walk_visible_files(root, scan_errors, kb_dir, excluded_roots=[assets_root]):
-            if path.suffix.casefold() != ".md":
-                continue
-            resolved = path.resolve()
-            try:
-                resolved.relative_to(kb_dir)
-            except ValueError:
-                continue
-            markdown_files.add(resolved)
-    markdown_files = sorted(markdown_files)
-
-    # Reuse a single decoded inventory for selected pages, evidence, headings,
-    # and backlinks. Invalid YAML remains in text_cache for read-only scans.
-    text_cache = {}
-    documents, document_errors = load_documents(
-        kb_dir, [schema["paths"]["raw"], schema["paths"]["wiki"]], text_cache=text_cache,
-        scan_errors=scan_errors, excluded_roots=[schema["paths"]["assets"]],
-    )
-    if scan_errors:
-        write_enabled = False
     raw_documents = {path: document for path, document in documents.items()
                      if path.startswith(schema["paths"]["raw"] + "/")}
     latest = latest_sources(raw_documents, kb_dir)
-    target_index["content_cache"] = text_cache
-
-    def read_content(relative):
-        if relative not in text_cache:
-            if relative in document_errors:
-                raise OSError(document_errors[relative])
-            text_cache[relative] = (kb_dir / relative).read_bytes().decode("utf-8")
-        return text_cache[relative]
-
-    all_issues = []
-    for relative, error in scan_errors.items():
-        all_issues.append((relative, make_issue("🔴", f"扫描覆盖不完整: {error}",
-                                              "恢复目录读取后重跑；本次不自动修复，也不判断孤儿页和索引统计")))
-    selected_relatives = {path.relative_to(kb_dir).as_posix() for path in markdown_files}
-    for relative, error in document_errors.items():
-        if relative not in selected_relatives and relative not in scan_errors:
-            all_issues.append((relative, make_issue("🟡", f"来源关系读取失败: {error}", "修复后重新检查来源版本与证据链")))
-    batch_limit = schema["limits"]["max_lint_batch_pages"]
-    if len(markdown_files) > batch_limit:
-        all_issues.append((
-            schema["paths"]["wiki"],
-            make_issue(
-                "🔵",
-                f"本次扫描页面数超过批次阈值: {len(markdown_files)} > {batch_limit}",
-                "后续按 topic 或目录分批执行深度语义检查",
-            ),
-        ))
     outbound_by_source = defaultdict(set)
     metadata_by_path = {}
     content_by_path = {}
@@ -816,7 +680,7 @@ def main():
         if not page_writable:
             for issue in issues:
                 issue["is_auto"] = False if write_enabled else issue["is_auto"]
-        issues += check_source_file_integrity(relative, metadata, kb_dir, schema, latest)
+        issues += check_source_file_integrity(relative, metadata, kb_dir, schema, latest, strict_sources)
         issues += check_raw_snapshot(relative, metadata, body, kb_dir, schema)
         issues += check_sources(relative, metadata, target_index)
         issues += heuristic_checks(relative, body, metadata, schema)
@@ -828,7 +692,7 @@ def main():
             if (isinstance(state, dict) and not state_errors
                     and state["reviewed_sha256"] != review_fingerprint({"metadata": metadata, "body": body})):
                 issues.append(make_issue("🟡", "摘要提炼记录与当前内容不一致", "重新检查相关主题后记录工具返回的指纹", line=1))
-        conflict_issues = check_conflicts(mask_code(body))
+        conflict_issues = check_conflicts(mask_non_prose(body))
         body_offset = content.count("\n", 0, len(content) - len(body))
         for issue in conflict_issues:
             if issue["line"]:
@@ -903,52 +767,125 @@ def main():
         all_issues.extend((index_relative, issue) for issue in
                           check_index_consistency(checked_index, global_pages, target_index, schema, index_relative))
 
-    severity_counts = {"🔴": 0, "🟡": 0, "🔵": 0}
-    auto_fixed = []
-    manual = {"🔴": [], "🟡": [], "🔵": []}
-    for relative, issue in all_issues:
-        severity_counts[issue["level"]] += 1
-        if issue["is_auto"] and write_enabled:
-            auto_fixed.append(format_report_item(relative, issue, "修复操作"))
-        else:
-            manual[issue["level"]].append(format_report_item(relative, issue))
+    return WritePlan(planned_writes, snapshot.originals), all_issues
 
+
+def main():
+    parser = argparse.ArgumentParser(description="LLM Wiki Lint Tool")
+    parser.add_argument("kb_dir", help="Path to the knowledge base directory")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--lint-dirs", nargs="*", help="Directories to lint, relative to kb_dir")
+    scope.add_argument("--lint-files", nargs="+", help="Markdown files to lint, relative to kb_dir; always includes index")
+    parser.add_argument("--index-file", help="Index file path, relative to kb_dir")
+    parser.add_argument("--fix", action="store_true", help="Enable safe deterministic auto-fixes")
+    parser.add_argument("--dry-run", action="store_true", help="Preview fixes without writing")
+    parser.add_argument("--strict-sources", action="store_true", help="Treat inaccessible external source files as errors")
+    parser.add_argument("--report-file", help="Path to save the markdown report")
+    parser.add_argument("--fail-on", choices=("error", "warning", "any"),
+                        help="Exit 1 when unresolved issues meet this severity threshold")
+    args = parser.parse_args()
+
+    try:
+        schema = load_schema()
+    except SchemaError as exc:
+        parser.error(str(exc))
+    kb_dir = Path(args.kb_dir).resolve()
+    if not kb_dir.exists():
+        parser.error(f"知识库目录不存在: {kb_dir}")
+
+    missing = validate_structure(kb_dir, schema)
+    if missing:
+        parser.error("知识库结构不完整: " + ", ".join(missing))
+
+    lint_dirs = [] if args.lint_files else (args.lint_dirs or [schema["paths"]["wiki"], schema["paths"]["raw"]])
+    index_relative = args.index_file or schema["paths"]["index"]
+    try:
+        lint_roots = [resolve_within(kb_dir, path) for path in lint_dirs]
+        selected_files = [resolve_within(kb_dir, path) for path in args.lint_files or []]
+        index_path = resolve_within(kb_dir, index_relative)
+    except SchemaError as exc:
+        parser.error(str(exc))
+    index_relative = index_path.relative_to(kb_dir).as_posix()
+    if not index_path.is_file() or not index_relative.startswith(schema["paths"]["wiki"] + "/"):
+        parser.error("index 必须是 wiki 内已存在的文件")
+    if index_relative.startswith(schema["paths"]["logs"] + "/"):
+        parser.error("历史日志不能用作 index")
+    missing_lint_roots = [str(path) for path in lint_roots if not path.is_dir()]
+    if missing_lint_roots:
+        parser.error("lint 目录不存在: " + ", ".join(missing_lint_roots))
+    assets_root = resolve_within(kb_dir, schema["paths"]["assets"])
+    if any(path.is_relative_to(assets_root) for path in lint_roots):
+        parser.error(f"lint 目录不能位于附件目录 {schema['paths']['assets']} 内")
+    for path in selected_files:
+        relative = path.relative_to(kb_dir).as_posix()
+        if (not path.is_file() or path.suffix.casefold() != ".md"
+                or is_asset_path(relative, schema)
+                or not relative.startswith((schema["paths"]["wiki"] + "/", schema["paths"]["raw"] + "/"))):
+            parser.error(f"lint 文件必须是 raw 或 wiki 内已存在的 Markdown 文件，附件除外: {relative}")
+
+    write_enabled = args.fix and not args.dry_run
     if write_enabled:
-        report = "## Lint 报告\n\n"
-        report += f"总页面 {len(markdown_files)} / 发现问题 {len(all_issues)} / 已修复 {len(auto_fixed)}\n\n"
-    else:
-        suffix = " (预览模式)" if args.dry_run else ""
-        report = f"## Lint 报告{suffix}\n\n"
-        report += f"总页面 {len(markdown_files)} / 发现问题 {len(all_issues)}\n\n"
-    report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
-    report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
-    report += f"🔵 轻微: {severity_counts['🔵']} 个（架构规范建议）\n\n"
+        try:
+            prepare_log(kb_dir, schema)
+        except (SchemaError, TemplateError, OSError) as exc:
+            parser.error(str(exc))
+    target_index = build_target_index(kb_dir, schema)
+    scan_errors = target_index["scan_errors"]
+    report_path = Path(args.report_file).absolute() if args.report_file else None
+    if report_path:
+        report_target = report_path.resolve()
+        if (report_path.is_symlink() or is_allowed_target(report_target, target_index)
+                or report_target == kb_dir / "AGENTS.md"):
+            parser.error("报告路径必须位于 raw、wiki 之外，且不能覆盖 AGENTS.md 或符号链接")
+    markdown_files = set(selected_files)
+    if args.lint_files:
+        markdown_files.add(index_path)
+    for root in lint_roots:
+        for path in walk_visible_files(root, scan_errors, kb_dir, excluded_roots=[assets_root]):
+            if path.suffix.casefold() != ".md":
+                continue
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(kb_dir)
+            except ValueError:
+                continue
+            markdown_files.add(resolved)
+    markdown_files = sorted(markdown_files)
 
-    if all_issues and write_enabled:
-        report += f"### ✅ 自动修复 ({len(auto_fixed)})\n\n"
-        report += "\n".join(auto_fixed) + "\n\n" if auto_fixed else "无自动修复操作。\n\n"
-        manual_count = sum(len(items) for items in manual.values())
-        report += f"### ⚠️ 需要人工介入 ({manual_count})\n\n"
-        for level in ("🔴", "🟡", "🔵"):
-            if manual[level]:
-                report += "\n".join(manual[level]) + "\n"
-    elif all_issues:
-        report += f"### ⚠️ 问题详情 ({len(all_issues)})\n\n"
-        for level in ("🔴", "🟡", "🔵"):
-            if manual[level]:
-                report += "\n".join(manual[level]) + "\n"
+    snapshot = load_snapshot(kb_dir, schema, target_index)
+    document_errors = snapshot.errors
+    if scan_errors:
+        write_enabled = False
+
+    all_issues = []
+    for relative, error in scan_errors.items():
+        all_issues.append((relative, make_issue("🔴", f"扫描覆盖不完整: {error}",
+                                              "恢复目录读取后重跑；本次不自动修复，也不判断孤儿页和索引统计")))
+    selected_relatives = {path.relative_to(kb_dir).as_posix() for path in markdown_files}
+    for relative, error in document_errors.items():
+        if relative not in selected_relatives and relative not in scan_errors:
+            all_issues.append((relative, make_issue("🟡", f"来源关系读取失败: {error}", "修复后重新检查来源版本与证据链")))
+    batch_limit = schema["limits"]["max_lint_batch_pages"]
+    if len(markdown_files) > batch_limit:
+        all_issues.append((
+            schema["paths"]["wiki"],
+            make_issue(
+                "🔵",
+                f"本次扫描页面数超过批次阈值: {len(markdown_files)} > {batch_limit}",
+                "后续按 topic 或目录分批执行深度语义检查",
+            ),
+        ))
+    plan, all_issues = plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot,
+                                    index_relative, write_enabled, args.strict_sources, all_issues)
+
+    result = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run)
+    report = result.text
 
     if write_enabled:
         written = []
         try:
-            # Validate every destination before committing any page changes.
-            for relative in planned_writes:
-                checked_destination(kb_dir, relative)
-            for relative, content in planned_writes.items():
-                destination = checked_destination(kb_dir, relative)
-                atomic_write_text(destination, content)
-                written.append(relative)
-            create_or_append_log(kb_dir, schema, len(markdown_files), len(all_issues), len(auto_fixed), severity_counts)
+            plan.apply(kb_dir, written)
+            create_or_append_log(kb_dir, schema, len(markdown_files), len(all_issues), result.fixed_count, result.severity_counts)
         except (OSError, SchemaError, TemplateError) as exc:
             print(f"lint 事务未完成: {exc}；已写入: {', '.join(written) or '无'}；请检查日志并恢复后重跑", file=sys.stderr)
             return 2
@@ -967,7 +904,7 @@ def main():
         print("目录扫描未完成，覆盖不完整；未执行自动修复或追加修复日志，请恢复目录读取后重跑", file=sys.stderr)
         return 2
     levels = {"error": {"🔴"}, "warning": {"🔴", "🟡"}, "any": {"🔴", "🟡", "🔵"}}
-    if args.fail_on and any(manual[level] for level in levels[args.fail_on]):
+    if args.fail_on and bool(result.unresolved_levels & levels[args.fail_on]):
         return 1
     return 0
 

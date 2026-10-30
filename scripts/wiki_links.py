@@ -38,6 +38,7 @@ def build_target_index(kb_dir, schema):
 
     return {
         "base": base,
+        "wiki_root": schema["paths"]["wiki"],
         "by_relative": by_relative,
         "by_name": by_name,
         "by_stem": by_stem,
@@ -100,7 +101,12 @@ def resolve_standard_link(source_relative, target_text, target_index):
     if not path_text:
         candidate = target_index["base"] / source_relative
     elif path_text.startswith("/"):
-        candidate = target_index["base"] / path_text.lstrip("/")
+        absolute = path_text.lstrip("/")
+        explicit_root = any(absolute == root or absolute.startswith(root + "/") for root in target_index["roots"])
+        wiki = target_index["wiki_root"]
+        if source_relative.startswith(wiki + "/") and not explicit_root:
+            absolute = f"{wiki}/{absolute}"
+        candidate = target_index["base"] / absolute
     else:
         candidate = target_index["base"] / Path(source_relative).parent / path_text
     candidate = candidate.resolve()

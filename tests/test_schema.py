@@ -18,7 +18,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from wiki_config import SchemaError, infer_document_type, load_markdown_template, load_schema
 from kb_fixture import initialize_kb, snapshot
-from test_lint_wiki import page
+from kb_fixture import page
 
 
 SCHEMA = load_schema()

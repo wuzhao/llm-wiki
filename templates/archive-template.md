@@ -6,7 +6,7 @@ type: analysis
 title: <分析标题>
 description: <一句话摘要>
 tags: [analysis, tag1, tag2]
-generated: { by: llm-wiki/0.2.0, at: YYYY-MM-DDTHH:MM:SSZ }
+generated: { by: "llm-wiki/{{SKILL_VERSION}}", at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 # verified:
 #   - { by: human:<id>, at: YYYY-MM-DDTHH:MM:SSZ }

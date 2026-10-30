@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from kb_fixture import ROOT, initialize_kb, snapshot, unreadable_directory
-from test_lint_wiki import page
+from kb_fixture import page
 from wiki_metadata import body_sha256, split_frontmatter
 from wiki_sources import source_identity
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import re
+import datetime
 from pathlib import Path, PurePosixPath
 
 
@@ -33,6 +34,19 @@ def bundled_templates_path():
     return Path(__file__).resolve().parent.parent / "templates"
 
 
+def skill_version():
+    from wiki_metadata import split_frontmatter
+    path = Path(__file__).resolve().parent.parent / "SKILL.md"
+    try:
+        _, metadata, _, error = split_frontmatter(path.read_text(encoding="utf-8"))
+        version = metadata.get("metadata", {}).get("version")
+        if error or not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            raise TemplateError("SKILL.md 缺少有效的 metadata.version")
+    except (OSError, AttributeError) as exc:
+        raise TemplateError(f"无法读取技能版本: {exc}") from exc
+    return version
+
+
 def load_markdown_template(template_name):
     root = bundled_templates_path().resolve()
     path = (root / template_name).resolve()
@@ -45,7 +59,20 @@ def load_markdown_template(template_name):
     match = MARKDOWN_TEMPLATE_RE.search(wrapper)
     if not match:
         raise TemplateError(f"模板缺少 markdown 代码块: {path}")
-    return match.group("body").rstrip() + "\n"
+    return match.group("body").replace("{{SKILL_VERSION}}", skill_version()).rstrip() + "\n"
+
+
+def render_markdown_template(template_name, now=None):
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    content = load_markdown_template(template_name)
+    for placeholder, value in {
+        "YYYY-MM-DDTHH:MM:SSZ": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "YYYY 年 MM 月": now.strftime("%Y 年 %m 月"),
+        "YYYY-MM-DD": now.strftime("%Y-%m-%d"),
+        "YYYY-MM": now.strftime("%Y-%m"),
+    }.items():
+        content = content.replace(placeholder, value)
+    return content
 
 
 def _validate_relative_path(value, label):
@@ -234,3 +261,14 @@ def index_section_for(relative_path, schema):
         if rel.startswith(prefix):
             return section
     return None
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Render a bundled page template with the current skill version and UTC time")
+    parser.add_argument("--template", required=True)
+    args = parser.parse_args()
+    try:
+        print(render_markdown_template(args.template), end="")
+    except TemplateError as exc:
+        parser.error(str(exc))

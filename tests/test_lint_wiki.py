@@ -15,7 +15,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from lint_wiki import heuristic_checks, split_frontmatter
 from wiki_links import build_target_index, resolve_standard_link, resolve_wikilink
-from kb_fixture import snapshot, unreadable_directory
+from kb_fixture import snapshot, unreadable_directory, markdown, page
 from wiki_config import load_markdown_template, load_schema
 
 
@@ -24,21 +24,6 @@ SCHEMA = load_schema()
 NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def markdown(metadata, body):
-    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip()
-    return f"---\n{frontmatter}\n---\n\n{body.rstrip()}\n"
-
-
-def page(document_type, title, body, generated_at=NOW, **extra):
-    metadata = {
-        "type": document_type,
-        "title": title,
-        "description": f"{title} 的测试页面。",
-        "tags": ["test"],
-        "generated": {"by": "llm-wiki-test/0.1.0", "at": generated_at},
-    }
-    metadata.update(extra)
-    return markdown(metadata, body)
 
 
 class LintWikiTests(unittest.TestCase):

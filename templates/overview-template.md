@@ -6,7 +6,7 @@ type: overview
 title: 知识库概览
 description: LLM Wiki 当前覆盖范围、结构关系与近期变化。
 tags: [overview]
-generated: { by: llm-wiki/0.2.0, at: YYYY-MM-DDTHH:MM:SSZ }
+generated: { by: "llm-wiki/{{SKILL_VERSION}}", at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 ---
 
