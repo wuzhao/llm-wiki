@@ -423,9 +423,19 @@ def check_conflicts(body):
                 issues.append(make_issue("🔵", "未解决冲突缺少复核时间", "补充具体日期或明确标记为待定", line=line))
 
     if not markers:
-        cue = re.search(r"^.*(?:与.+冲突|存在(?:事实|观点)?冲突|互相矛盾|contradicts|conflicts with).*$", body, re.MULTILINE | re.IGNORECASE)
-        if cue:
-            issues.append(make_issue("🟡", "发现未结构化的冲突候选", "使用冲突模板记录双方观点、来源和状态", line=line_number(body, cue.start())))
+        # A conflict between evidence is different from a topic mentioning wars,
+        # software concurrency or conflicting interests. Never cross sentences.
+        for sentence in re.finditer(r"[^\n。！？；;.!?，,（）()]+", body):
+            text = sentence.group()
+            explicit = re.search(
+                r"存在(?:事实|观点|数据)冲突|(?:来源|资料|证据|记录|结论|观点|数据|说法).*(?:互相矛盾|相互矛盾|与.+冲突)"
+                r"|\b(?:sources?|evidence|data|claims?|records?|conclusions?)\b.*(?:contradicts?|conflicts? with)", text, re.I)
+            negated = re.search(
+                r"(?:不|并非|没有|并无|尚未|避免|不会|不再|未发现)(?:存在|构成|发生|发现|出现|造成|互相|相互|数据|事实|观点|证据|明显|任何|实质性|\s)*(?:冲突|矛盾)"
+                r"|\b(?:do not|does not|don't|doesn't|not)\s+(?:contradict|conflict)", text, re.I)
+            if explicit and not negated:
+                issues.append(make_issue("🟡", "发现未结构化的冲突候选", "使用冲突模板记录双方观点、来源和状态", line=line_number(body, sentence.start())))
+                break
     return issues
 
 
@@ -692,7 +702,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
             if (isinstance(state, dict) and not state_errors
                     and state["reviewed_sha256"] != review_fingerprint({"metadata": metadata, "body": body})):
                 issues.append(make_issue("🟡", "摘要提炼记录与当前内容不一致", "重新检查相关主题后记录工具返回的指纹", line=1))
-        conflict_issues = check_conflicts(mask_non_prose(body))
+        conflict_issues = check_conflicts(mask_non_prose(body)) if index_section_for(relative, schema) else []
         body_offset = content.count("\n", 0, len(content) - len(body))
         for issue in conflict_issues:
             if issue["line"]:

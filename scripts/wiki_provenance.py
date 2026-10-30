@@ -2,7 +2,7 @@
 import re
 from collections import defaultdict, deque
 
-from markdown_links import blank, escaped, mask_non_prose
+from markdown_links import blank, escaped, mask_link_metadata, mask_non_prose
 from wiki_metadata import body_sha256, parse_datetime
 from wiki_numbers import quantities
 from wiki_sources import document_content_hash, latest_sources, load_documents, source_identity
@@ -12,17 +12,60 @@ def issue(level, problem, action, line=1, body_line=False):
     return {"level": level, "problem": problem, "action": action, "line": line, "is_auto": False, "_body_line": body_line}
 
 
+NAVIGATION_LABELS = {"来源", "参考资料", "相关页面", "关联阅读", "相关阅读", "关联知识", "相关知识", "相关概念", "相关导航"}
+QUOTE_INTRO = re.compile(
+    r"(?:(?:原文|原话|原句|直接引文|逐字引用|直接引用)(?:写道|写的是|表述为|说|称|是|为|如下)?\s*[:：]?"
+    r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
+
+
+def mask_claim_markup(text):
+    navigation, offset, navigation_level = set(), 0, None
+    for line in text.splitlines(keepends=True):
+        heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", line.rstrip("\n"))
+        if heading:
+            if navigation_level is not None and len(heading[1]) <= navigation_level:
+                navigation_level = None
+            if heading[2] in NAVIGATION_LABELS:
+                navigation_level = len(heading[1])
+        prefix = re.match(r"^\s*(?:[-*+]\s+)?([^：:\n]+)[：:]", line)
+        if navigation_level is not None or (prefix and prefix[1] in NAVIGATION_LABELS):
+            navigation.add(offset)
+        offset += len(line)
+    return mask_link_metadata(text, lambda at: text.rfind("\n", 0, at) + 1 in navigation)
+
+
+def claim_text(text):
+    # Footnote identifiers and link destinations are references, not assertions.
+    # Leave a separator so independent values cannot merge across a citation.
+    return re.sub(r"\[\^[^\]\n]+\]", lambda m: ";" + blank(m.group()[1:]), mask_link_metadata(text))
+
+
 def quoted_literals(text):
-    return {value for pair in re.findall(r'「([^「」\n]+)」|"([^"\n]+)"', text) for value in pair if value}
+    """Only explicitly marked direct quotes require verbatim source wording."""
+    values = set()
+    for match in re.finditer(r'「([^「」\n]+)」|"([^"\n]+)"', text):
+        if escaped(text, match.start()):
+            continue
+        prefix = text[:match.start()].replace("**", "").replace("__", "")
+        if QUOTE_INTRO.search(prefix) or re.search(r"(?:^|\n) {0,3}>[ \t]*$", prefix):
+            values.add(match[1] or match[2])
+    return values
 
 
 def claim_literals(text):
+    text = claim_text(text)
     return {value.literal for value in quantities(text)} | quoted_literals(text)
 
 
 def missing_literals(text, evidence):
-    available = {value.key for value in quantities(evidence) if value.key is not None}
-    missing = {value.literal for value in quantities(text) if value.key is None or value.key not in available}
+    text = claim_text(text)
+    evidence_quantities = quantities(claim_text(evidence))
+    available = {value.key for value in evidence_quantities if value.key is not None}
+    literal_forms = {value.literal for value in evidence_quantities}
+    # Unsupported quantities can still be located as complete, unchanged tokens.
+    # Do not turn a parser limitation into a claim that the source lacks the text.
+    missing = {value.literal for value in quantities(text)
+               if (value.literal not in literal_forms if value.key is None else value.key not in available)}
     # Direct quotations still require the original wording, including digits.
     return sorted(missing | {value for value in quoted_literals(text) if value not in evidence})
 
@@ -147,7 +190,7 @@ class ProvenanceGraph:
             fingerprint = source.get("body_sha256")
             if fingerprint is not None and (not isinstance(fingerprint, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", fingerprint)):
                 issues.append(issue("🟡", "来源 body_sha256 格式无效", "从影响分析输出获取来源正文指纹，不猜测指纹"))
-        prose = mask_non_prose(body)
+        prose = mask_claim_markup(mask_non_prose(body))
         definitions = {}
         definition_pattern = r"^ {0,3}\[\^([^\]\n]+)\]:.*$"
         for definition in re.finditer(definition_pattern, prose, re.M):

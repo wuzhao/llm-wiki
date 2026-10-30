@@ -187,5 +187,40 @@ def wikilink_spans(text):
             yield start, end
 
 
+def mask_link_metadata(text, hide_label_at=None):
+    """Keep visible claims, masking targets/titles and optional navigation labels."""
+    edits = []
+    for opening, start, end, closing in _inline_link_occurrences(text):
+        label_end = text.rfind("](", opening, start) + 1
+        edits.append((opening if hide_label_at and hide_label_at(opening) else label_end, closing))
+    for match in re.finditer(r"^ {0,3}\[(?![\[^])[^\]\n]+\]:[ \t]*(?:\n[ \t]*)?", text, re.M):
+        span = destination_span(text, match.end())
+        if span:
+            end = text.find("\n", span[2])
+            end = len(text) if end < 0 else end
+            # A continued title is metadata; arbitrary indented prose is not.
+            title = re.match(r'''\n[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*(?=\n|$)''', text[end:])
+            edits.append((match.start(), end + title.end() if title else end))
+    if hide_label_at:
+        for opening, _, _ in standard_link_occurrences(text):
+            if hide_label_at(opening):
+                use = re.match(r"\[[^\]\n]+\](?:\[[^\]\n]*\])?", text[opening:])
+                if use:
+                    edits.append((opening, opening + use.end()))
+    for match in re.finditer(r"\[\[([^\]\n|]+?)(?:\\?\|([^\]\n]*))?\]\]", text):
+        if escaped(text, match.start()):
+            continue
+        if hide_label_at and hide_label_at(match.start()):
+            edits.append(match.span())
+        elif match[2] is not None:
+            # Retain brackets as boundaries between adjacent linked quantities.
+            edits.append((match.start() + 2, match.start(2)))
+    # Spans may overlap (e.g. a whole navigation link and its destination).
+    masked = list(text)
+    for start, end in edits:
+        masked[start:end] = blank(text[start:end])
+    return "".join(masked)
+
+
 def unescape_target(text):
     return re.sub(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])", r"\1", text)

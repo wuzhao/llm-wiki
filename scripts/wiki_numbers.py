@@ -14,12 +14,15 @@ SMALL = {"十": 10, "百": 100, "千": 1000}
 CN = "零〇一二两三四五六七八九十百千万亿点几多余半"
 SPACE = r"[^\S\n]*"
 # 百 in 百分点 belongs to the unit, not the preceding numeric value.
-NUMBER = rf"(?:(?:(?!百分点)[0-9{CN}])+(?:,[0-9]+)*(?:\.[0-9]+)?(?:(?!百分点)[十百千万亿])*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+NUMBER = rf"(?:数{SPACE}(?=[十百千万亿]))?(?:(?:(?!百分点)[0-9{CN}])+(?:,[0-9]+)*(?:\.[0-9]+)?(?:(?!百分点)[十百千万亿])*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+# Keep adjacent magnitude components atomic, including unsupported orders. Do
+# not join across punctuation, citations, line breaks or repeated explicit units.
+COMPOSITE = rf"(?:[0-9]+{SPACE}[十百千万亿]{SPACE})+[0-9]+{SPACE}[十百千万亿](?![0-9{CN}])"
 
 # Only explicit aliases and exact conversions. Counts and percentages keep their
 # dimensions; decimal storage units are deliberately separate from binary units.
 UNITS = {unit: (unit, Fraction(1)) for unit in
-         ("个", "条", "项", "种", "次", "人", "位", "家", "年", "月", "倍", "元", "美元", "%", "个百分点")}
+         ("个", "条", "项", "种", "次", "人", "位", "家", "年", "月", "倍", "元", "美元", "%", "‰", "个百分点")}
 for aliases, dimension, factor in (
     (("ms", "毫秒"), "time", Fraction(1, 1000)),
     (("s", "秒"), "time", 1),
@@ -55,7 +58,7 @@ def endpoint(suffix):
     return (rf"(?:(?P<sign{suffix}>[+\-正负]){SPACE})?"
             rf"(?:(?P<percent{suffix}>百分之){SPACE})?"
             rf"(?:(?P<inner_sign{suffix}>[+\-正负]){SPACE})?"
-            rf"(?P<number{suffix}>{NUMBER}(?:[^\S\n]+(?!百分点)[十百千万亿])?)"
+            rf"(?P<number{suffix}>{COMPOSITE}|{NUMBER}(?:[^\S\n]+(?!百分点)[十百千万亿])?)"
             rf"(?:{SPACE}(?P<unit{suffix}>{UNIT}))?")
 
 
@@ -75,6 +78,8 @@ class Quantity:
 
 def chinese_integer(text):
     """Reject abbreviated/ambiguous forms such as 三五, 一百二 and 一万二."""
+    if text in SMALL or text in ("万", "亿"):
+        return {**SMALL, "万": 10000, "亿": 100000000}[text]
     for unit, factor in (("亿", 100000000), ("万", 10000)):
         if unit in text:
             if text.count(unit) != 1:
@@ -89,7 +94,7 @@ def chinese_integer(text):
                 return None
             return high * factor + low
     if len(text) == 1:
-        return DIGITS.get(text, SMALL.get(text) if text == "十" else None)
+        return DIGITS.get(text)
     total, digit, last_place, zero = 0, None, 10000, False
     for char in text:
         if char in DIGITS:
@@ -118,7 +123,18 @@ def chinese_integer(text):
 
 
 def number_value(text, unit):
-    text = re.sub(r"[^\S\n]+(?=[十百千万亿]$)", "", text)
+    text = re.sub(r"[^\S\n]+", "", text)
+    scales = {**SMALL, "万": 10000, "亿": 100000000}
+    if re.fullmatch(r"(?:[0-9]+[十百千万亿]){2,}", text):
+        total, previous = 0, None
+        for digits, magnitude in re.findall(r"([0-9]+)([十百千万亿])", text):
+            scale = scales[magnitude]
+            component = int(digits) * scale
+            if previous is not None and (scale >= previous or component >= previous):
+                return None
+            total += component
+            previous = scale
+        return Fraction(total)
     arabic = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?|\.[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?)([十百千万亿]?)", text)
     if arabic:
         scale = {"": 1, **SMALL, "万": 10000, "亿": 100000000}[arabic[2]]
@@ -190,14 +206,20 @@ def quantities(text):
                 or re.match(r"\.[0-9]", normalized[match.end():])):
             continue
         number = match["number1"] or ""
+        # Keep anchored amounts (四十多年, 百余项, 半小时) in scope even when
+        # unsupported. Generic 多次/几十次 and unitless 一半 are not precise claims.
+        endpoints = [(match[f"number{i}"] or "", match[f"unit{i}"]) for i in (1, 2)]
+        if any(any(char in value for char in "几数") or value in ("多", "余")
+               or (value in ("半", "一半") and not unit) for value, unit in endpoints):
+            continue
         bare_arabic = any(c.isdigit() for c in number) and (
             any(c in number for c in ".十百千万亿") or sum(c.isdigit() for c in number) >= 3)
-        ambiguous = any(c in number for c in "几多余半") and any(c in number for c in DIGITS)
+        anchored_chinese = number.endswith(("多", "余")) and any(char in DIGITS for char in number)
         if not (match["date"] or match["unit1"] or match["unit2"] or match["percent1"] or match["percent2"]
-                or bare_arabic or ambiguous):
+                or bare_arabic or anchored_chinese):
             continue
         # An unparsed compound unit must not supply its scalar prefix as evidence.
-        compound = re.match(r"(?:[/·][A-Za-z\u4e00-\u9fff]+|[²³])", normalized[match.end():])
+        compound = re.match(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])", normalized[match.end():])
         end = match.end() + (compound.end() if compound else 0)
         result.append(Quantity(text[match.start():end].strip(), None if compound else quantity_key(match)))
     return result

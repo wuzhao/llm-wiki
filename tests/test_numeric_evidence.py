@@ -15,6 +15,7 @@ class NumericEvidenceTests(unittest.TestCase):
             ('1.2万个', '一万两千个'), ('1.5万个', '一点五万个'),
             ('1.2 万个', '12000个'), ('1000', '1 千'),
             ('105个', '一百零五个'), ('10001条', '一万零一条'),
+            ('百年', '100年'), ('千倍', '1000倍'), ('百万个', '100万个'),
             ('2026年', '二〇二六年'), ('2026年', '二零二六年'),
             ('0.042秒', '42毫秒'), ('1秒', '1000 ms'), ('120秒', '两分钟'),
             ('1GB', '1000MB'), ('1GiB', '1024MiB'),
@@ -38,6 +39,7 @@ class NumericEvidenceTests(unittest.TestCase):
             ('50%', '150%'), ('1000条', '11000条'), ('42ms', '142ms'),
             ('3.5%', '-3.5%'), ('负3.5%', '正3.5%'),
             ('50%', '50个百分点'), ('50%', '0.5'), ('2个', '2条'),
+            ('5.63‰', '5.63%'), ('5.63', '5.63‰'),
             ('1GB', '1024MB'), ('1GB', '1GiB'), ('1MB', '1mb'),
             ('50%', '约50%'), ('至少50%', '超过50%'), ('50%', '不足50%'),
             ('50%', 'about 50%'), ('50%', '50%以上'), ('2年', '第2年'),
@@ -56,15 +58,59 @@ class NumericEvidenceTests(unittest.TestCase):
                 if claim_literals(right):
                     self.assertTrue(missing_literals(right, left))
 
-    def test_ambiguous_or_unsupported_forms_remain_review_candidates(self):
-        for value in ('几十个', '三五个', '一百二个', '一万二个', '约一半',
+    def test_unsupported_forms_can_be_located_as_complete_original_tokens(self):
+        for value in ('三五个', '一百二个', '一万二个', '1GB/s',
                       '10至20万个', '10 至 20 万个', '1,00条', '1e3个', '2026-02-30'):
             with self.subTest(value=value):
-                self.assertEqual(missing_literals(value, value), [value])
+                self.assertEqual(missing_literals(value, value), [])
+                self.assertEqual(missing_literals(value, '未提供相应数量。'), [value])
         for claim, evidence in (('30个', '三五个'), ('20个', '几十个'),
-                                ('12000个', '一万二个'), ('50%', '约一半')):
+                                ('12000个', '一万二个'), ('50%', '约一半'),
+                                ('1e3个', '11e3个'), ('1e3个', '-1e3个'),
+                                ('1GB/s', '11GB/s'), ('1GB/s', '1GB/s2'),
+                                ('1GB/s', '1GB/s²'), ('1GB/s', '1GB/s/年'),
+                                ('1GB', '1GB/2s'), ('三五个', '三五个至六七个')):
             with self.subTest(claim=claim, evidence=evidence):
                 self.assertEqual(missing_literals(claim, evidence), [claim])
+
+    def test_vague_amounts_do_not_create_precise_numeric_claims(self):
+        text = '多次、几十次、数十次、数百次、十几次、几条、约一半'
+        self.assertEqual(claim_literals(text), set())
+        self.assertEqual(missing_literals(text, '未提供数量。'), [])
+        self.assertEqual(missing_literals('原文：「多次」', '未提供数量。'), ['多次'])
+        self.assertEqual(missing_literals('50次', '数十次'), ['50次'])
+        self.assertEqual(missing_literals('约40年', '未提供数量。'), ['约40年'])
+        self.assertEqual(missing_literals('一项、两条', '两项、三条'), ['一项', '两条'])
+        self.assertEqual(missing_literals('记录数1000条', '共有1000条'), [])
+        self.assertEqual(missing_literals('记录数1000条', '共有1001条'), ['1000条'])
+        for value in ('一千六百多', '百余项', '40多年', '半小时'):
+            with self.subTest(value=value):
+                self.assertEqual(missing_literals(value, '没有相应数量。'), [value])
+                self.assertEqual(missing_literals(value, value), [])
+
+    def test_composite_magnitudes_are_atomic_and_ignore_formatting_spaces(self):
+        for left, right in (
+            ('1 亿 9100 万', '就1亿9100万'),
+            ('1亿9100万', '就 1 亿 9100 万'),
+            ('1 亿 9100 万', '1.91亿'),
+            ('1亿9100万个', '一亿九千一百万个'),
+            ('1亿9100万', '191000000'),
+            ('1 万 2 千 3 百', '12300'),
+        ):
+            with self.subTest(left=left, right=right):
+                self.assertEqual(len(claim_literals(left)), 1)
+                self.assertEqual(missing_literals(left, right), [])
+                self.assertEqual(missing_literals(right, left), [])
+        for claim, evidence in (
+            ('1亿', '1 亿 9100 万'), ('9100万', '1亿9100万'),
+            ('1.91亿', '1亿，另有9100万'), ('1.91亿', '1亿\n9100万'),
+            ('1.91亿', '1亿 和 9100万'), ('1.91亿', '1亿[^a]9100万[^b]'),
+            ('1亿9100万', '1亿9000万'), ('1亿9100万', '-1亿9100万'),
+            ('1亿9100万', '约1亿9100万'), ('2亿', '1亿10000万'),
+            ('2亿', '1亿1亿'),
+        ):
+            with self.subTest(claim=claim, evidence=evidence):
+                self.assertTrue(missing_literals(claim, evidence))
 
     def test_chinese_quantities_are_checked_and_prose_is_not(self):
         self.assertEqual(missing_literals('有两个条件', '有三个条件'), ['两个'])
@@ -72,9 +118,9 @@ class NumericEvidenceTests(unittest.TestCase):
         self.assertEqual(claim_literals('42ms 和四十二毫秒'), {'42ms', '四十二毫秒'})
 
     def test_direct_quotes_still_require_exact_wording(self):
-        self.assertEqual(missing_literals('「有2个条件」', '有两个条件'), ['有2个条件'])
-        self.assertEqual(missing_literals('「有2个条件」', '有2个条件'), [])
-        self.assertEqual(missing_literals('「缓存」', '缓冲'), ['缓存'])
+        self.assertEqual(missing_literals('原文：「有2个条件」', '有两个条件'), ['有2个条件'])
+        self.assertEqual(missing_literals('原文：「有2个条件」', '有2个条件'), [])
+        self.assertEqual(missing_literals('原话是「缓存」', '缓冲'), ['缓存'])
 
     def test_markdown_and_punctuation_do_not_change_numeric_meaning(self):
         self.assertEqual(missing_literals('有2个条件', '- 两个条件'), [])

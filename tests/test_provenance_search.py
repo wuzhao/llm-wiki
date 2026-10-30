@@ -106,6 +106,53 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertIn('原文未定位到数值或引文候选: 99ms', result.stdout)
         self.assertIn('原文未定位到数值或引文候选: 42ms', result.stdout)
 
+    def test_compound_numbers_ranges_and_vague_words_do_not_add_format_noise(self):
+        self.write('raw/source.md',
+                   '就1亿9100万，一般人群是5.7倍，需求是增长到10.6倍。'
+                   '1%至2%，2008年至2018年，2018年至2022年，约40年。1e3个。')
+        self.write('wiki/concepts/alpha.md',
+                   '1 亿 9100 万，5.7 倍，10.6 倍。[^a]\n\n'
+                   '1% 至 2%，2008 年至 2018 年，2018 年至 2022 年，约 40 年。[^a]\n\n'
+                   '有1e3个。[^a]\n\n经过多次讨论，做了几十次尝试。\n\n[^a]: 原始记录',
+                   sources=[{'id': 'a', 'resource': '../../raw/source.md'}])
+        before = snapshot(self.kb)
+        result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md', '--fail-on', 'error')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('原文未定位', result.stdout)
+        self.assertNotIn('数值或引文缺少逐条来源', result.stdout)
+        self.assertEqual(snapshot(self.kb), before)
+
+    def test_numeric_candidates_stay_grouped_and_cannot_sum_unrelated_sources(self):
+        self.write('raw/composite.md', '1亿9100万')
+        self.write('raw/a.md', '1亿')
+        self.write('raw/b.md', '9100万')
+        self.write('wiki/concepts/alpha.md',
+                   '数量为1亿，另一结果为9100万。[^composite]\n\n'
+                   '总量1.91亿。[^a][^b]\n\n[^composite]: 复合数量\n[^a]: A\n[^b]: B',
+                   sources=[{'id': 'composite', 'resource': '../../raw/composite.md'},
+                            {'id': 'a', 'resource': '../../raw/a.md'},
+                            {'id': 'b', 'resource': '../../raw/b.md'}])
+        result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 2)
+        self.assertIn('原文未定位到数值或引文候选: 1亿, 9100万', result.stdout)
+        self.assertIn('原文未定位到数值或引文候选: 1.91亿', result.stdout)
+
+    def test_claim_markup_does_not_hide_real_quotes_or_numeric_citation_errors(self):
+        self.write('raw/source.md', '增长50%，使用缓存。')
+        self.write('wiki/concepts/alpha.md',
+                   '这是「术语」的概括。[^a]\n\n[50%](alpha.md "2026 年版本")。[^a]\n\n'
+                   '原文：「缓冲」。[^a]\n\n实际为99%。\n\n'
+                   '## 关联阅读\n\n[2025 年报告](alpha.md)\n\n[^a]: 原始材料',
+                   sources=[{'id': 'a', 'resource': '../../raw/source.md'}])
+        before = snapshot(self.kb)
+        result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 1)
+        self.assertIn('原文未定位到数值或引文候选: 缓冲', result.stdout)
+        self.assertEqual(result.stdout.count('关键数值或引文缺少逐条来源'), 1)
+        self.assertEqual(snapshot(self.kb), before)
+
     def test_new_source_version_propagates_drift_to_archived_analysis(self):
         self.write('raw/old.md', '42ms', source_url='https://example.com/source', timestamp='2026-01-01T00:00:00Z')
         self.write('wiki/summaries/summary.md', '42ms', sources=[{'id': 'raw', 'resource': '../../raw/old.md'}])
