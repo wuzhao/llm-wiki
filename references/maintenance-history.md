@@ -140,3 +140,12 @@
 - 使用项目 `.venv` 执行全量 unittest，189 项通过；项目一致性检查及 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
 - 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/synthesis-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`tests/test_evidence_diagnostics.py`、`tests/test_lint_wiki.py`。
+
+## 维护验证记录：2026-10-31
+
+- 版本从 `0.2.6` 升至 `0.2.7`，模板继续通过统一渲染读取版本。
+- 单源摘要直接转述可使用页级来源，数值仍与唯一 raw 核对；校准值、派生值与直接引文保留就地引用要求。多源或间接来源摘要，以及概念、实体、分析与含事实论断的聚合页保持逐条引用要求；纯导航聚合页无需补造来源。
+- 同一份 `phanwiki/wiki` 快照的 97 页只读对照中，告警从 228 条变为 216 条：移除 31 条摘要缺脚注提示，补出 13 条证据待复核及 6 条聚合页来源或脚注问题。原有 161 条证据告警全部保留，严重问题仍为 0；403 个知识文件的内容指纹不变。经用户授权仅补建缺失的空 analyses 目录。
+- 使用项目 `.venv` 执行全量 unittest，202 项通过，包含新增的引用粒度回归 13 项；项目一致性检查与 `git diff --check` 通过。
+- Golden Sample 临时知识库完成初始化、文件与本地 HTTP URL 及粘贴文本摄入、单篇充分建页、仅提及暂缓、跨篇补足、同义复用、冲突保留与提炼检查点；默认 lint、重复输入和查询探索保持只读，安全修复仅追加日志。场景 16 的来源结构与引用边界由新增回归覆盖，场景 11 至场景 15 的状态、续扫、周期与版本由全量自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
+- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_provenance.py`、`templates/AGENTS-template.md`、`templates/hub-template.md`、`templates/source-template.md`、`tests/test_citation_scope.py`。

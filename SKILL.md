@@ -2,7 +2,7 @@
 name: llm-wiki
 description: 管理由 raw/（含 raw/assets/ 附件）与 wiki/ 组成的本地 Markdown 知识库，用于初始化、素材摄入与更新、基于库内证据的查询、知识探索和健康维护。
 metadata:
-  version: 0.2.6
+  version: 0.2.7
   compatibility: macOS / Linux
 ---
 
@@ -27,6 +27,7 @@ metadata:
 - 摄入、投喂、重新摄入、重新投喂及更新素材的请求均执行 ingest，由来源身份、内容变化与编译进度决定分支，不因再次输入就强制新增版本或重建页面。
 - 写入前补读 `references/guardrails.md`、`references/okf-frontmatter.md`，只加载本次产物需要的 `templates/` 模板；用 `scripts/wiki_config.py --template <模板文件名>` 渲染当前版本与 UTC 时间，再填写知识内容。
 - 回查原始证据时读 `references/provenance-policy.md`；发现容量问题或用户要求结构治理时读 `references/scalability-policy.md`。
+- 引用粒度按 `references/provenance-policy.md` 的来源结构规则执行：单源摘要的直接转述可用页级来源；多源或聚合页的关键数字、日期和引文，以及任何知识页的校准值、派生值与直接引文须就地标注。
 - 本地工具异常时按 `references/guardrails.md` 的环境处理规则诊断。
 - 回归或发布前读 `references/golden-sample.md`。
 - ingest 必须执行 `references/synthesis-policy.md` 的主题检查与增量复核；首次整理及显式全库整理覆盖历史摘要。满足建页门槛时在本次任务内创建或更新，不以「按需」推迟。

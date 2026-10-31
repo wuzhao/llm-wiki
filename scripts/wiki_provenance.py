@@ -12,7 +12,15 @@ def issue(level, problem, action, line=1, body_line=False, **details):
     return {"level": level, "problem": problem, "action": action, "line": line, "is_auto": False, "_body_line": body_line, **details}
 
 
-NAVIGATION_LABELS = {"来源", "参考资料", "相关页面", "关联阅读", "相关阅读", "关联知识", "相关知识", "相关概念", "相关导航"}
+NAVIGATION_LABELS = {"来源", "参考资料", "相关页面", "关联阅读", "相关阅读", "关联知识", "相关知识", "相关概念", "相关导航", "子主题导航"}
+PROCESSED_CLAIM = re.compile(
+    r"校准|校正|更正|修正|派生值|(?:自行|本页|本摘要|编者)(?:计算|估算|推算|推导)"
+    r"|(?:计算|估算|推算|推导)(?:得到|得出|结果)|[=＝]")
+
+
+def requires_inline_citation(text):
+    """Explicit quotes and processing markers cannot inherit page-level attribution."""
+    return bool(quoted_literals(claim_text(text)) or PROCESSED_CLAIM.search(text))
 
 
 def mask_claim_markup(text):
@@ -174,12 +182,43 @@ class ProvenanceGraph:
             self.evidence_indexes[key] = EvidenceIndex(self.evidence_documents[path] for path in key)
         return self.evidence_indexes[key]
 
+    def single_raw_summary(self, path, metadata):
+        # One reachable leaf does not imply direct transcription: an intermediary
+        # can aggregate or process it, and an unresolved second source can be lost.
+        sources = metadata.get("sources")
+        entries = self.entries.get(path, [])
+        if (path.startswith(self.schema["paths"]["summaries"] + "/")
+                and isinstance(sources, list) and len(sources) == len(entries) == 1):
+            _, target, external = entries[0]
+            if not external and target in self.raw:
+                return target
+        return None
+
+    def evidence_issues(self, path, text, raw_paths, body_start):
+        details = self.evidence_index(raw_paths).diagnose(text) if raw_paths else []
+        if not details:
+            return []
+        body = self.documents[path]["body"]
+        for detail in details:
+            detail["line"] = (body.count("\n", 0, body_start + detail["start"])
+                              + self.documents[path].get("body_start_line", 1))
+        line = body.count("\n", 0, body_start + min(detail["start"] for detail in details)) + 1
+        return [issue("🟡", "数值或引文证据待复核: " + ", ".join(detail["claim"] for detail in details),
+                      "候选仅供回查，须核对指标、时间与归因；不自动更正事实", line, True,
+                      category="evidence", details=details, sources=sorted(raw_paths))]
+
     def check(self, path, body, metadata):
-        required_roots = tuple(self.schema["paths"][key] + "/" for key in ("summaries", "entities", "concepts", "analyses"))
+        required_roots = tuple(self.schema["paths"][key] + "/" for key in ("summaries", "entities", "concepts", "analyses", "hubs"))
         if not path.startswith(required_roots):
+            return []
+        prose = mask_claim_markup(mask_non_prose(body))
+        if (path.startswith(self.schema["paths"]["hubs"] + "/")
+                and not metadata.get("sources") and not claim_literals(prose)
+                and not re.search(r"\[\^[^\]\n]+\]", prose)):
             return []
         issues = []
         entries = self.entries.get(path, [])
+        page_raw = self.single_raw_summary(path, metadata)
         if not metadata.get("sources"):
             issues.append(issue("🟡", "知识页缺少来源证据", "补充 sources 并将派生链追溯到 raw；不得编造来源"))
         leaves, _, cycle = self.walk(path)
@@ -202,7 +241,6 @@ class ProvenanceGraph:
             fingerprint = source.get("body_sha256")
             if fingerprint is not None and (not isinstance(fingerprint, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", fingerprint)):
                 issues.append(issue("🟡", "来源 body_sha256 格式无效", "从影响分析输出获取来源正文指纹，不猜测指纹"))
-        prose = mask_claim_markup(mask_non_prose(body))
         definitions = {}
         definition_pattern = r"^ {0,3}\[\^([^\]\n]+)\]:.*$"
         for definition in re.finditer(definition_pattern, prose, re.M):
@@ -223,7 +261,7 @@ class ProvenanceGraph:
             missing_definitions = references - definitions.keys()
             if missing_definitions:
                 issues.append(issue("🔴", "逐条引用缺少脚注定义: " + ", ".join(sorted(missing_definitions)), "补充 [^来源-id]: 定义并核对原文，不自动编造脚注", line, True, category="citation"))
-            if literals and not references:
+            if literals and not references and (not page_raw or requires_inline_citation(text)):
                 issues.append(issue("🟡", "关键数值或引文缺少逐条来源", "此项仅表示引用不完整，尚未核对证据；核对 raw 后补充 [^来源-id]", line, True, category="citation"))
             cursor = 0
             for attribution in re.finditer(r"(?:\[\^[^\]\n]+\][ \t]*)+", text):
@@ -236,18 +274,16 @@ class ProvenanceGraph:
                 # Broken source chains are unavailable evidence, not absent facts.
                 if not raw_paths and keys <= by_id.keys() and claim_literals(segment):
                     issues.append(issue("🟡", "该条引用无法回查 raw 证据", "补全该条引用的来源链；其他论断的可用来源不能代替它", line, True, category="evidence"))
-                details = self.evidence_index(raw_paths).diagnose(segment) if raw_paths else []
-                if details:
-                    for detail in details:
-                        detail["line"] = (body.count("\n", 0, block_start + cursor + detail["start"])
-                                          + self.documents[path].get("body_start_line", 1))
-                    claim_line = body.count("\n", 0, block_start + cursor + min(detail["start"] for detail in details)) + 1
-                    issues.append(issue("🟡", "数值或引文证据待复核: " + ", ".join(detail["claim"] for detail in details),
-                                        "候选仅供回查，须核对指标、时间与归因；不自动更正事实", claim_line, True,
-                                        category="evidence", details=details, sources=sorted(raw_paths)))
+                issues += self.evidence_issues(path, segment, raw_paths, block_start + cursor)
                 cursor = attribution.end()
-            if references and claim_literals(text[cursor:]):
+            remainder = text[cursor:]
+            if (references and claim_literals(remainder)
+                    and (not page_raw or requires_inline_citation(remainder))):
                 issues.append(issue("🟡", "后续数值或引文缺少逐条来源", "此项尚未核对证据；为后续论断补充来源，不沿用前一论断的脚注", line, True, category="citation"))
+            if page_raw:
+                # The exemption only changes citation completeness. Uncited
+                # summary claims still undergo literal lookup in their sole raw.
+                issues += self.evidence_issues(path, remainder, {page_raw}, block_start + cursor)
         return issues
 
     def affected(self, sources):
