@@ -4,7 +4,7 @@ import hashlib
 import re
 
 from markdown_links import blank, escaped, mask_link_metadata
-from wiki_numbers import UNITS, quantities
+from wiki_numbers import UNITS, WIDTH, quantities
 
 
 CONTEXT_RADIUS = 45
@@ -13,6 +13,8 @@ QUOTE_INTRO = re.compile(
     r"(?:(?:原文|原话|原句|直接引文|逐字引用|直接引用)(?:写道|写的是|表述为|说|称|是|为|如下)?\s*[:：]?"
     r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
 DIAGNOSTICS = {
+    "year-abbreviation": ("可能是年份缩写，也可能是时长", "核对上下文与世纪；不自动将两位数年补为四位年份"),
+    "qualifier-difference": ("数值相同但限定词不同", "保留原文的近似、上下界或序数含义，核对后再修改论断"),
     "unit-difference": ("数值部分相同但单位不同", "核对指标与单位；校准须补充独立依据，不能只改单位符号"),
     "unit-missing": ("候选存在单位省略或补全", "核对原文语境中的单位，不自动接受补全"),
     "not-found": ("未找到可比较的数值候选", "回查原文；派生值列出有来源的分量和公式，校准值补充依据"),
@@ -47,10 +49,20 @@ def excerpt(text, start, end):
 
 
 def related_quantity(claim, source):
-    """Only suggest complete quantities with equal displayed values/qualifiers."""
+    """Suggest bounded differences, without approving equivalence or inference."""
     if (claim.key is None or source.key is None or not claim.units or not source.units
-            or claim.key[0] != source.key[0] or len(claim.units) != len(source.units)):
+            or len(claim.units) != len(source.units)):
         return None
+    if claim.key[1:] == source.key[1:] and claim.key[0] != source.key[0]:
+        return "qualifier-difference"
+    if claim.key[0] != source.key[0]:
+        return None
+    if (claim.units == source.units == ("年",)
+            and re.fullmatch(r"[0-9]{2}\s*年", source.literal.translate(WIDTH))
+            and 1000 <= claim.key[1][1] <= 9999
+            and claim.key[1][1].denominator == 1
+            and claim.key[1][1] % 100 == source.key[1][1]):
+        return "year-abbreviation"
     claim_values = tuple(value / UNITS.get(unit, ("number", 1))[1]
                          for (_, value), unit in zip(claim.key[1:], claim.units))
     source_values = tuple(value / UNITS.get(unit, ("number", 1))[1]

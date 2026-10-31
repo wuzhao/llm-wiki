@@ -1,6 +1,6 @@
 """Render lint findings without inspecting or modifying the knowledge base."""
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import Counter, defaultdict
 import html
 import re
 
@@ -71,6 +71,18 @@ def format_categories(items):
     return result
 
 
+def diagnostic_summary(all_issues):
+    counts = Counter(detail["label"] for _, issue in all_issues for detail in issue.get("details", []))
+    if not counts:
+        return ""
+    report = ("### 证据诊断概览\n\n以下按未匹配的主张计数，一条告警可包含多个主张；不增加告警总数。"
+              "分类仅帮助安排复核，候选未定位或口径差异均不能据此判为事实正确。\n\n"
+              "| 诊断 | 主张数 |\n| ---- | -----: |\n")
+    for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+        report += f"| {label} | {count} |\n"
+    return report + "\n"
+
+
 def build_report(all_issues, checked, write_enabled=False, dry_run=False):
     severity_counts = {"🔴": 0, "🟡": 0, "🔵": 0}
     auto_fixed = []
@@ -92,6 +104,7 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
     report += f"🔵 轻微: {severity_counts['🔵']} 个（架构规范建议）\n\n"
+    report += diagnostic_summary(all_issues)
 
     if all_issues and write_enabled:
         report += f"### ✅ 自动修复 ({len(auto_fixed)})\n\n"

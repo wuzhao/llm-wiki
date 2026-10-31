@@ -11,6 +11,60 @@ from wiki_config import load_schema
 
 
 class EvidenceDiagnosticTests(unittest.TestCase):
+    def test_abbreviated_year_is_only_a_candidate_and_century_is_not_inferred(self):
+        index = EvidenceIndex([EvidenceDocument('raw/a.md', '以15年为一，到2030年增长。')])
+        for claim in ('2015年', '1915 年'):
+            detail = index.diagnose(claim)[0]
+            self.assertEqual(detail['kind'], 'year-abbreviation')
+            self.assertEqual(detail['candidates'][0]['literal'], '15年')
+            self.assertEqual(index.missing(claim), [claim])
+        for claim, source in [('2015年', '215年'), ('2015年', '15个人'),
+                              ('2015年', '约15年'), ('2015年', '15.0年'),
+                              ('2015年6月1日', '15年'), ('2015年', '15年到30年')]:
+            with self.subTest(claim=claim, source=source):
+                self.assertEqual(EvidenceIndex([EvidenceDocument('a', source)]).diagnose(claim)[0]['candidate_count'], 0)
+
+    def test_qualifier_difference_still_warns_with_original_candidate(self):
+        for claim, source in [('1.3至1.5', '1.3到1.5左右'), ('42ms', '约0.042秒'),
+                              ('3‰', '至少0.3%'), ('2个', '第2个')]:
+            with self.subTest(claim=claim, source=source):
+                index = EvidenceIndex([EvidenceDocument('a', source)])
+                self.assertEqual(index.diagnose(claim)[0]['kind'], 'qualifier-difference')
+                self.assertEqual(index.missing(claim), [claim])
+
+    def test_spoken_negative_sign_is_retained_in_matching_and_positions(self):
+        for claim, source in [('-2.41%', '负的2.41%'), ('-2.41%', '负 的 2.41%'),
+                              ('-2.41%', '百分之负的二点四一'), ('2.41%', '正的2.41%'),
+                              ('-2.41%至-1.2%', '负的2.41%至负的1.2%')]:
+            with self.subTest(claim=claim, source=source):
+                self.assertEqual(missing_literals(claim, source), [])
+                self.assertEqual(missing_literals(source, claim), [])
+        self.assertEqual(missing_literals('2.41%', '增长为负的2.41%'), ['2.41%'])
+        self.assertEqual(missing_literals('-2.41%', '增长为正的2.41%'), ['-2.41%'])
+        for source in ('需自负的20%费用', '担负的3项任务', '背负的2万元债务'):
+            with self.subTest(source=source):
+                self.assertFalse(missing_literals(source, source.replace('负的', '负')))
+        self.assertEqual(missing_literals('20%', '需自负的20%费用'), [])
+        self.assertEqual(missing_literals('-20%', '需自负的20%费用'), ['-20%'])
+        self.assertTrue(missing_literals('原文：「-2.41%」', '负的2.41%'))
+        body = '增长为负的2.41%。'
+        detail = EvidenceIndex([EvidenceDocument('raw/a.md', body)]).diagnose('-2.41‰')[0]
+        self.assertEqual(detail['kind'], 'unit-difference')
+        candidate = detail['candidates'][0]
+        self.assertEqual(candidate['column'], 4)
+        self.assertEqual(body[candidate['start']:candidate['end']], '负的2.41%')
+
+    def test_diagnostic_overview_counts_claims_without_changing_warning_counts(self):
+        index = EvidenceIndex([EvidenceDocument('a', '以15年为基期，范围1.3到1.5左右，出生率5.63%。')])
+        details = index.diagnose('2015年，1.3至1.5，5.63‰')
+        report = build_report([('wiki/a.md', issue('🟡', '待复核', '', details=details))], 1)
+        self.assertEqual(report.severity_counts['🟡'], 1)
+        self.assertEqual(report.unresolved_levels, {'🟡'})
+        self.assertIn('证据诊断概览', report.text)
+        self.assertIn('| 可能是年份缩写，也可能是时长 | 1 |', report.text)
+        self.assertIn('| 数值相同但限定词不同 | 1 |', report.text)
+        self.assertIn('| 数值部分相同但单位不同 | 1 |', report.text)
+
     def test_exact_ratio_conversions_preserve_qualifiers_ranges_and_signs(self):
         for left, right in [('5.63‰', '0.563%'), ('-2.41‰', '-0.241%'),
                             ('约3‰', '约0.3%'), ('4‰至5‰', '0.4%至0.5%'),

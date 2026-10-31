@@ -94,12 +94,14 @@ LEXICAL_COUNT = re.compile(
     r"|[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)"
 )
 COMPOUND_UNIT = re.compile(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])")
+# A sign can be spoken as 负的; lexical 自负/担负/背负/胜负 are not signs.
+SIGN = rf"(?:[+\-]|正(?:{SPACE}的)?|(?<![自担背胜])负(?:{SPACE}的)?)"
 
 
 def endpoint(suffix):
-    return (rf"(?:(?P<sign{suffix}>[+\-正负]){SPACE})?"
+    return (rf"(?:(?P<sign{suffix}>{SIGN}){SPACE})?"
             rf"(?:(?P<percent{suffix}>百分之){SPACE})?"
-            rf"(?:(?P<inner_sign{suffix}>[+\-正负]){SPACE})?"
+            rf"(?:(?P<inner_sign{suffix}>{SIGN}){SPACE})?"
             rf"(?P<number{suffix}>{COMPOSITE}|{NUMBER}(?:[^\S\n]+(?!百分点)[十百千万亿])?)"
             rf"(?:{SPACE}(?P<unit{suffix}>{UNIT}))?")
 
@@ -266,7 +268,8 @@ def quantity_key(match):
         dimension, factor = UNITS.get(units[index - 1], ("number", 1))
         if match[f"sign{index}"] and match[f"inner_sign{index}"]:
             return None
-        sign = -1 if (match[f"sign{index}"] or match[f"inner_sign{index}"]) in ("-", "负") else 1
+        sign_text = match[f"sign{index}"] or match[f"inner_sign{index}"] or ""
+        sign = -1 if sign_text.startswith(("-", "负")) else 1
         values.append((dimension, value * factor * sign))
     if len(values) == 2 and (values[0][0] != values[1][0] or values[0][1] > values[1][1]):
         return None

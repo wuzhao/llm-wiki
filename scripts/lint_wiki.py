@@ -520,7 +520,7 @@ def heuristic_checks(relative_path, body, metadata, schema):
 
     if relative_path.startswith(f"{schema['paths']['logs']}/"):
         if len(body.encode("utf-8")) > limits["max_log_bytes"]:
-            issues.append(make_issue("🔵", "日志超过体积阈值", "建议开始新的日志分片，不移动或截断旧记录"))
+            issues.append(make_issue("🔵", "日志超过体积阈值", "分批读取该日志，后续记录按月追加；换月不消除历史超限，不移动或截断旧记录"))
         return issues
 
     if index_section_for(relative_path, schema) and not body.strip():
@@ -756,7 +756,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
                 inbound[target].add(source)
     for page in sorted(eligible_pages):
         if graph_complete and not inbound[page]:
-            all_issues.append((page, make_issue("🟡", "孤儿页面，没有其他内容页指向此页", "从相关内容页建立入链")))
+            all_issues.append((page, make_issue("🔵", "孤儿页面，没有其他内容页指向此页", "有实际语义关系时补充入链；独立摘要可保留，不为消除提示强建概念页")))
 
     index_content = content_by_path.get(index_relative)
     indexed_pages = outbound_by_source.get(index_relative, set())

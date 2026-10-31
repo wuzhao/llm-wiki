@@ -101,6 +101,32 @@ class LintWikiTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("[[wiki/concepts/alpha.md]]", result.stdout)
         self.assertIn("孤儿页面，没有其他内容页指向此页", result.stdout)
+        self.assertIn("- 🔵 [[wiki/concepts/alpha.md]]\n  发现问题：孤儿页面", result.stdout)
+        self.assertIn("不为消除提示强建概念页", result.stdout)
+
+    def test_orphan_advice_alone_does_not_fail_warning_threshold(self):
+        (self.kb / 'raw/source.md').write_text(page('source-material', 'source', '保留独立摘要。'))
+        (self.kb / 'wiki/summaries/source.md').write_text(page('source-summary', 'source',
+            '## 摘要\n\n保留独立摘要。[^raw]\n\n## 关键要点\n\n有用的独立材料。[^raw]\n\n[^raw]: 原始材料。',
+            sources=[{'id': 'raw', 'resource': '../../raw/source.md'}]))
+        index_path = self.kb / SCHEMA['paths']['index']
+        index_path.write_text(index_path.read_text().replace('## 素材来源', '## 素材来源\n\n- [[summaries/source]]'))
+        before = snapshot(self.kb)
+        result = self.run_lint('--fail-on', 'warning')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('孤儿页面', result.stdout)
+        result = self.run_lint('--fail-on', 'any')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(snapshot(self.kb), before)
+
+    def test_historical_log_size_remains_advice_and_is_not_silenced_by_rollover(self):
+        schema = copy.deepcopy(SCHEMA)
+        schema['limits']['max_log_bytes'] = 1
+        issues = heuristic_checks('wiki/logs/200001.md', '历史记录。', {'type': 'log'}, schema)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]['level'], '🔵')
+        self.assertEqual(issues[0]['problem'], '日志超过体积阈值')
+        self.assertIn('换月不消除历史超限', issues[0]['action'])
 
     def test_content_page_inbound_link_clears_target_orphan(self):
         self.write_concept("alpha")

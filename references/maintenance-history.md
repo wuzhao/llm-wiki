@@ -128,3 +128,15 @@
 - 使用项目 `.venv` 执行全量 unittest，183 项通过；项目一致性检查与 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
 - 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_provenance_search.py`。
+
+### 同日口语数值与告警分级发布验证
+
+- 版本从 `0.2.5` 升至 `0.2.6`，模板继续通过统一渲染读取版本。
+- 口语「负的」「正的」保留正负含义，避免用负数原文支撑正数；自负、担负、背负等词不作为负号。年份缩写或时长歧义、限定词不同提供原文候选并保留告警，不自动补世纪或删近似词。
+- 报告新增按主张计数的证据诊断概览，不改变证据告警计数。孤儿页改为蓝色导航建议；历史日志超限继续提示，明确换月不会消除旧超限。
+- 策略明确独立摘要可保留，提炼指纹变化不直接证明 raw 更新，按实际差异局部复核；未解决冲突、引用缺口与来源依赖继续保持待复核。
+- 同一份 146 页快照对照中，告警总数仍为 272：黄色从 272 条变为 271 条，蓝色从 0 条变为 1 条，对应孤儿页分级调整。161 条证据告警包含 247 个未匹配主张；负号解析纠正了两条告警的具体未匹配项。原知识库 Markdown 内容指纹保持一致。
+- 本地快照含 44 条原始文件不可访问与 2 条未解决冲突，未出现日志超限，与用户所贴报告存在差异；缺失的空 analyses 目录仅在临时测试副本补齐。
+- 使用项目 `.venv` 执行全量 unittest，189 项通过；项目一致性检查及 `git diff --check` 通过。
+- Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
+- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/synthesis-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`tests/test_evidence_diagnostics.py`、`tests/test_lint_wiki.py`。
