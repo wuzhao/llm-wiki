@@ -117,3 +117,14 @@
 - 使用项目 `.venv` 执行全量 unittest，170 项通过；项目一致性检查及 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
 - 修改文件：`SKILL.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_numbers.py`、`tests/test_numeric_evidence.py`、`tests/test_provenance_search.py`。
+
+### 同日证据诊断与表格引用发布验证
+
+- 版本从 `0.2.4` 升至 `0.2.5`，模板继续通过统一渲染读取版本。
+- 证据待复核项展开具体主张、诊断原因与 raw 候选行列及上下文；引用完整性独立展示，缺脚注不表示原文已含该数字。
+- 百分率与千分率支持精确比例换算，保留符号、范围和限定词；数值部分相同但单位不同、单位省略及一般推导继续复核，不自动改写事实。
+- 表格共享来源采用显式有界范围，行内脚注优先；跨页唯一共同候选汇总回查入口，保留所有影响位置和告警计数。
+- 同一份 144 页快照只读对照中，告警仍为 270 条：161 条证据待复核、45 条缺脚注及 64 条其他问题。除标题更名与定位细化外，按页面与问题内容比较无增减；原知识库 Markdown 内容指纹保持一致。
+- 使用项目 `.venv` 执行全量 unittest，183 项通过；项目一致性检查与 `git diff --check` 通过。
+- Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
+- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_provenance_search.py`。

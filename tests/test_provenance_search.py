@@ -68,11 +68,11 @@ class ProvenanceSearchTests(unittest.TestCase):
         concept = self.write('wiki/concepts/latency.md', '延迟为 42ms。[^experiment]\n\n[^experiment]: 实验结果', sources=[{'id': 'experiment', 'resource': '../summaries/experiment.md'}])
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/latency.md', '--fail-on', 'error')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn('原文未定位', result.stdout)
+        self.assertNotIn('数值或引文证据待复核', result.stdout)
         self.assertNotIn('发现死链', result.stdout)
         concept.write_text(concept.read_text().replace('42ms', '99ms'))
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/latency.md')
-        self.assertIn('原文未定位到数值或引文候选: 99ms', result.stdout)
+        self.assertIn('数值或引文证据待复核: 99ms', result.stdout)
 
     def test_unknown_claim_reference_and_duplicate_source_ids_are_errors(self):
         self.write('raw/source.md', '42ms')
@@ -93,9 +93,9 @@ class ProvenanceSearchTests(unittest.TestCase):
         before = snapshot(self.kb)
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md', '--fail-on', 'error')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('原文未定位到数值或引文候选: 3.5%, 50%', result.stdout)
-        self.assertNotIn('原文未定位到数值或引文候选: 42ms', result.stdout)
-        self.assertNotIn('原文未定位到数值或引文候选: 百分之五十', result.stdout)
+        self.assertIn('数值或引文证据待复核: 3.5%, 50%', result.stdout)
+        self.assertNotIn('数值或引文证据待复核: 42ms', result.stdout)
+        self.assertNotIn('数值或引文证据待复核: 百分之五十', result.stdout)
         self.assertEqual(snapshot(self.kb), before)
 
     def test_values_are_bound_to_their_own_citations_in_one_paragraph(self):
@@ -103,8 +103,8 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.write('raw/b.md', '99ms')
         self.write('wiki/concepts/alpha.md', '延迟为99ms。[^a]另一结果为42ms。[^b]\n\n[^a]: A\n[^b]: B', sources=[{'id': 'a', 'resource': '../../raw/a.md'}, {'id': 'b', 'resource': '../../raw/b.md'}])
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
-        self.assertIn('原文未定位到数值或引文候选: 99ms', result.stdout)
-        self.assertIn('原文未定位到数值或引文候选: 42ms', result.stdout)
+        self.assertIn('数值或引文证据待复核: 99ms', result.stdout)
+        self.assertIn('数值或引文证据待复核: 42ms', result.stdout)
 
     def test_compound_numbers_ranges_and_vague_words_do_not_add_format_noise(self):
         self.write('raw/source.md',
@@ -118,7 +118,7 @@ class ProvenanceSearchTests(unittest.TestCase):
         before = snapshot(self.kb)
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md', '--fail-on', 'error')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn('原文未定位', result.stdout)
+        self.assertNotIn('数值或引文证据待复核', result.stdout)
         self.assertNotIn('数值或引文缺少逐条来源', result.stdout)
         self.assertEqual(snapshot(self.kb), before)
 
@@ -134,9 +134,9 @@ class ProvenanceSearchTests(unittest.TestCase):
                             {'id': 'b', 'resource': '../../raw/b.md'}])
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 2)
-        self.assertIn('原文未定位到数值或引文候选: 1亿, 9100万', result.stdout)
-        self.assertIn('原文未定位到数值或引文候选: 1.91亿', result.stdout)
+        self.assertEqual(result.stdout.count('数值或引文证据待复核:'), 2)
+        self.assertIn('数值或引文证据待复核: 1亿, 9100万', result.stdout)
+        self.assertIn('数值或引文证据待复核: 1.91亿', result.stdout)
 
     def test_claim_markup_does_not_hide_real_quotes_or_numeric_citation_errors(self):
         self.write('raw/source.md', '增长50%，使用缓存。')
@@ -148,8 +148,8 @@ class ProvenanceSearchTests(unittest.TestCase):
         before = snapshot(self.kb)
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 1)
-        self.assertIn('原文未定位到数值或引文候选: 缓冲', result.stdout)
+        self.assertEqual(result.stdout.count('数值或引文证据待复核:'), 1)
+        self.assertIn('数值或引文证据待复核: 缓冲', result.stdout)
         self.assertEqual(result.stdout.count('关键数值或引文缺少逐条来源'), 1)
         self.assertEqual(snapshot(self.kb), before)
 
@@ -166,8 +166,8 @@ class ProvenanceSearchTests(unittest.TestCase):
         before = snapshot(self.kb)
         result = self.command('lint_wiki.py', '--lint-files', 'wiki/concepts/alpha.md')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count('原文未定位到数值或引文候选:'), 2)
-        self.assertIn('原文未定位到数值或引文候选: 2026年6月8日', result.stdout)
+        self.assertEqual(result.stdout.count('数值或引文证据待复核:'), 2)
+        self.assertIn('数值或引文证据待复核: 2026年6月8日', result.stdout)
         self.assertIn('两人, 两次', result.stdout)
         self.assertEqual(result.stdout.count('关键数值或引文缺少逐条来源'), 1)
         self.assertEqual(snapshot(self.kb), before)

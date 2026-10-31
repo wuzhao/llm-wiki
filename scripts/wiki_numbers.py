@@ -1,6 +1,6 @@
 """Conservative, exact quantity equivalence for evidence lookup, not fact checking."""
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from fractions import Fraction
 
@@ -24,6 +24,8 @@ COMPOSITE = rf"(?:[0-9]+{SPACE}[十百千万亿]{SPACE})+[0-9]+{SPACE}[十百千
 UNITS = {unit: (unit, Fraction(1)) for unit in
          ("个", "条", "项", "种", "次", "人", "位", "家", "年", "月", "倍", "元", "美元", "%", "‰", "个百分点")}
 for aliases, dimension, factor in (
+    (("%",), "ratio", Fraction(1, 100)),
+    (("‰",), "ratio", Fraction(1, 1000)),
     (("ms", "毫秒"), "time", Fraction(1, 1000)),
     (("s", "秒"), "time", 1),
     (("分钟",), "time", 60),
@@ -114,6 +116,9 @@ TOKEN = re.compile(
 class Quantity:
     literal: str
     key: tuple | None
+    start: int = field(default=0, compare=False)
+    end: int = field(default=0, compare=False)
+    units: tuple = field(default=(), compare=False)
 
 
 def chinese_integer(text):
@@ -235,11 +240,17 @@ def date_key(match):
     return ("date", prefix if prefix != "exact" else suffix, *values)
 
 
-def quantity_key(match):
+def quantity_units(match):
     units = [match["unit1"] or ("%" if match["percent1"] else ""),
              match["unit2"] or ("%" if match["percent2"] else "")]
     if match["range"]:
         units = [units[0] or units[1], units[1] or units[0]]
+    return tuple(units[:2 if match["range"] else 1])
+
+
+def quantity_key(match):
+    units = quantity_units(match)
+    if match["range"]:
         # Shared magnitudes (10 至 20 万) need language interpretation.
         if (match["number2"].endswith(tuple("百千万亿")) and not match["unit1"]
                 and not any(c in match["number1"] for c in "百千万亿")):
@@ -293,7 +304,7 @@ def quantities(text):
         consumed_end = end
         following = normalized[match.end():match.end() + 1]
         if not following or not re.match(rf"[A-Za-z0-9_{CN}]", following):
-            result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else date_key(match))))
+            result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else date_key(match), match.start(), end)))
         # Keep a hard boundary so quantities cannot merge across a masked date.
         numeric_text[match.start():end] = ";" + " " * (end - match.start() - 1)
     numeric_text = "".join(numeric_text)
@@ -325,5 +336,6 @@ def quantities(text):
         compound = COMPOUND_UNIT.match(normalized, match.end())
         end = compound.end() if compound else match.end()
         consumed_end = end
-        result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else quantity_key(match))))
+        result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else quantity_key(match),
+                                             match.start(), end, quantity_units(match))))
     return [quantity for _, quantity in sorted(result, key=lambda item: item[0])]

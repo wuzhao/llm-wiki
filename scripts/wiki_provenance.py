@@ -4,18 +4,15 @@ from collections import defaultdict, deque
 
 from markdown_links import blank, escaped, mask_link_metadata, mask_non_prose
 from wiki_metadata import body_sha256, parse_datetime
-from wiki_numbers import quantities
+from wiki_evidence import EvidenceDocument, EvidenceIndex, claim_literals, claim_text, missing_literals, quoted_literals
 from wiki_sources import document_content_hash, latest_sources, load_documents, source_identity
 
 
-def issue(level, problem, action, line=1, body_line=False):
-    return {"level": level, "problem": problem, "action": action, "line": line, "is_auto": False, "_body_line": body_line}
+def issue(level, problem, action, line=1, body_line=False, **details):
+    return {"level": level, "problem": problem, "action": action, "line": line, "is_auto": False, "_body_line": body_line, **details}
 
 
 NAVIGATION_LABELS = {"来源", "参考资料", "相关页面", "关联阅读", "相关阅读", "关联知识", "相关知识", "相关概念", "相关导航"}
-QUOTE_INTRO = re.compile(
-    r"(?:(?:原文|原话|原句|直接引文|逐字引用|直接引用)(?:写道|写的是|表述为|说|称|是|为|如下)?\s*[:：]?"
-    r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
 
 
 def mask_claim_markup(text):
@@ -34,40 +31,43 @@ def mask_claim_markup(text):
     return mask_link_metadata(text, lambda at: text.rfind("\n", 0, at) + 1 in navigation)
 
 
-def claim_text(text):
-    # Footnote identifiers and link destinations are references, not assertions.
-    # Leave a separator so independent values cannot merge across a citation.
-    return re.sub(r"\[\^[^\]\n]+\]", lambda m: ";" + blank(m.group()[1:]), mask_link_metadata(text))
-
-
-def quoted_literals(text):
-    """Only explicitly marked direct quotes require verbatim source wording."""
-    values = set()
-    for match in re.finditer(r'「([^「」\n]+)」|"([^"\n]+)"', text):
-        if escaped(text, match.start()):
+def claim_blocks(prose):
+    """Only an explicit caption grants scope to the immediately following table."""
+    lines = prose.splitlines(keepends=True)
+    offsets, offset = [], 0
+    for line in lines:
+        offsets.append(offset)
+        offset += len(line)
+    tables = {}
+    for index, line in enumerate(lines):
+        caption = re.fullmatch(r"[ \t]*本表(?:数据)?来源：[ \t]*((?:\[\^[^\]\n]+\][ \t]*)+)[ \t]*\n?", line)
+        if not caption:
             continue
-        prefix = text[:match.start()].replace("**", "").replace("__", "")
-        if QUOTE_INTRO.search(prefix) or re.search(r"(?:^|\n) {0,3}>[ \t]*$", prefix):
-            values.add(match[1] or match[2])
-    return values
-
-
-def claim_literals(text):
-    text = claim_text(text)
-    return {value.literal for value in quantities(text)} | quoted_literals(text)
-
-
-def missing_literals(text, evidence):
-    text = claim_text(text)
-    evidence_quantities = quantities(claim_text(evidence))
-    available = {value.key for value in evidence_quantities if value.key is not None}
-    literal_forms = {value.literal for value in evidence_quantities}
-    # Unsupported quantities can still be located as complete, unchanged tokens.
-    # Do not turn a parser limitation into a claim that the source lacks the text.
-    missing = {value.literal for value in quantities(text)
-               if (value.literal not in literal_forms if value.key is None else value.key not in available)}
-    # Direct quotations still require the original wording, including digits.
-    return sorted(missing | {value for value in quoted_literals(text) if value not in evidence})
+        start = index + 1
+        if start < len(lines) and not lines[start].strip():
+            start += 1
+        if start + 1 >= len(lines) or not lines[start].lstrip().startswith("|"):
+            continue
+        if not re.fullmatch(r"[ \t]*\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*\n?", lines[start + 1]):
+            continue
+        end = start + 2
+        while end < len(lines) and lines[end].lstrip().startswith("|"):
+            end += 1
+        tables[start] = (end, caption[1].strip())
+    cursor = 0
+    for start, (end, references) in tables.items():
+        for paragraph in re.finditer(r"(?:[^\n]+\n?)+", prose[cursor:offsets[start]]):
+            yield cursor + paragraph.start(), paragraph.group()
+        for row in range(start, end):
+            if row == start + 1:
+                continue
+            text = lines[row].rstrip("\n")
+            if not any(not escaped(text, match.start()) for match in re.finditer(r"\[\^[^\]\n]+\]", text)):
+                text += references
+            yield offsets[row], text
+        cursor = offsets[end] if end < len(lines) else len(prose)
+    for paragraph in re.finditer(r"(?:[^\n]+\n?)+", prose[cursor:]):
+        yield cursor + paragraph.start(), paragraph.group()
 
 
 class ProvenanceGraph:
@@ -88,6 +88,8 @@ class ProvenanceGraph:
         self.reverse = defaultdict(set)
         self.entries = {}
         self.walk_cache = {}
+        self.evidence_documents = {}
+        self.evidence_indexes = {}
         self.drift = defaultdict(set)
         for path, document in self.documents.items():
             sources = document["metadata"].get("sources", [])
@@ -162,6 +164,16 @@ class ProvenanceGraph:
         self.walk_cache[start] = leaves, seen, cycle
         return self.walk_cache[start]
 
+    def evidence_index(self, raw_paths):
+        key = tuple(sorted(raw_paths))
+        if key not in self.evidence_indexes:
+            for path in key:
+                if path not in self.evidence_documents:
+                    document = self.raw[path]
+                    self.evidence_documents[path] = EvidenceDocument(path, document["body"], document.get("body_start_line", 1))
+            self.evidence_indexes[key] = EvidenceIndex(self.evidence_documents[path] for path in key)
+        return self.evidence_indexes[key]
+
     def check(self, path, body, metadata):
         required_roots = tuple(self.schema["paths"][key] + "/" for key in ("summaries", "entities", "concepts", "analyses"))
         if not path.startswith(required_roots):
@@ -197,23 +209,22 @@ class ProvenanceGraph:
             key = definition[1]
             if key in definitions:
                 line = body.count("\n", 0, definition.start()) + 1
-                issues.append(issue("🔴", f"脚注定义重复: {key}", "保留唯一的脚注定义并核对引用", line, True))
+                issues.append(issue("🔴", f"脚注定义重复: {key}", "保留唯一的脚注定义并核对引用", line, True, category="citation"))
             definitions[key] = definition.start()
         prose = re.sub(definition_pattern, lambda match: blank(match.group()), prose, flags=re.M)
-        for paragraph in re.finditer(r"(?:[^\n]+\n?)+", prose):
-            text = paragraph.group()
+        for block_start, text in claim_blocks(prose):
             reference_matches = [match for match in re.finditer(r"\[\^([^\]\n]+)\]", text) if not escaped(text, match.start())]
             references = {match[1] for match in reference_matches}
             literals = claim_literals(text)
-            line = body.count("\n", 0, paragraph.start()) + 1
+            line = body.count("\n", 0, block_start) + 1
             unknown = references - by_id.keys()
             if unknown:
-                issues.append(issue("🔴", "逐条引用没有对应来源 id: " + ", ".join(sorted(unknown)), "核对脚注与 sources[].id", line, True))
+                issues.append(issue("🔴", "逐条引用没有对应来源 id: " + ", ".join(sorted(unknown)), "核对脚注与 sources[].id", line, True, category="citation"))
             missing_definitions = references - definitions.keys()
             if missing_definitions:
-                issues.append(issue("🔴", "逐条引用缺少脚注定义: " + ", ".join(sorted(missing_definitions)), "补充 [^来源-id]: 定义并核对原文，不自动编造脚注", line, True))
+                issues.append(issue("🔴", "逐条引用缺少脚注定义: " + ", ".join(sorted(missing_definitions)), "补充 [^来源-id]: 定义并核对原文，不自动编造脚注", line, True, category="citation"))
             if literals and not references:
-                issues.append(issue("🟡", "关键数值或引文缺少逐条来源", "为论断补充 [^来源-id]，并先核对 raw 原文", line, True))
+                issues.append(issue("🟡", "关键数值或引文缺少逐条来源", "此项仅表示引用不完整，尚未核对证据；核对 raw 后补充 [^来源-id]", line, True, category="citation"))
             cursor = 0
             for attribution in re.finditer(r"(?:\[\^[^\]\n]+\][ \t]*)+", text):
                 if escaped(text, attribution.start()):
@@ -221,13 +232,22 @@ class ProvenanceGraph:
                 keys = set(re.findall(r"\[\^([^\]\n]+)\]", attribution.group()))
                 targets = {by_id[key] for key in keys if by_id.get(key)}
                 raw_paths = {leaf for target in targets for leaf in self.walk(target)[0]}
-                evidence = "\n".join(self.raw[raw]["body"] for raw in sorted(raw_paths))
-                missing = missing_literals(text[cursor:attribution.start()], evidence)
-                if missing:
-                    issues.append(issue("🟡", "原文未定位到数值或引文候选: " + ", ".join(missing), "人工核对语境；派生计算须列出有来源的分量，不自动更正事实", line, True))
+                segment = text[cursor:attribution.start()]
+                # Broken source chains are unavailable evidence, not absent facts.
+                if not raw_paths and keys <= by_id.keys() and claim_literals(segment):
+                    issues.append(issue("🟡", "该条引用无法回查 raw 证据", "补全该条引用的来源链；其他论断的可用来源不能代替它", line, True, category="evidence"))
+                details = self.evidence_index(raw_paths).diagnose(segment) if raw_paths else []
+                if details:
+                    for detail in details:
+                        detail["line"] = (body.count("\n", 0, block_start + cursor + detail["start"])
+                                          + self.documents[path].get("body_start_line", 1))
+                    claim_line = body.count("\n", 0, block_start + cursor + min(detail["start"] for detail in details)) + 1
+                    issues.append(issue("🟡", "数值或引文证据待复核: " + ", ".join(detail["claim"] for detail in details),
+                                        "候选仅供回查，须核对指标、时间与归因；不自动更正事实", claim_line, True,
+                                        category="evidence", details=details, sources=sorted(raw_paths)))
                 cursor = attribution.end()
             if references and claim_literals(text[cursor:]):
-                issues.append(issue("🟡", "后续数值或引文缺少逐条来源", "为后续论断补充来源，不沿用前一论断的脚注", line, True))
+                issues.append(issue("🟡", "后续数值或引文缺少逐条来源", "此项尚未核对证据；为后续论断补充来源，不沿用前一论断的脚注", line, True, category="citation"))
         return issues
 
     def affected(self, sources):
