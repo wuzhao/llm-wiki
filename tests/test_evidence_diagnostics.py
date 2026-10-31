@@ -25,8 +25,7 @@ class EvidenceDiagnosticTests(unittest.TestCase):
                 self.assertEqual(EvidenceIndex([EvidenceDocument('a', source)]).diagnose(claim)[0]['candidate_count'], 0)
 
     def test_qualifier_difference_still_warns_with_original_candidate(self):
-        for claim, source in [('1.3至1.5', '1.3到1.5左右'), ('42ms', '约0.042秒'),
-                              ('3‰', '至少0.3%'), ('2个', '第2个')]:
+        for claim, source in [('3‰', '至少0.3%'), ('2个', '第2个')]:
             with self.subTest(claim=claim, source=source):
                 index = EvidenceIndex([EvidenceDocument('a', source)])
                 self.assertEqual(index.diagnose(claim)[0]['kind'], 'qualifier-difference')
@@ -62,7 +61,7 @@ class EvidenceDiagnosticTests(unittest.TestCase):
         self.assertEqual(report.unresolved_levels, {'🟡'})
         self.assertIn('证据诊断概览', report.text)
         self.assertIn('| 可能是年份缩写，也可能是时长 | 1 |', report.text)
-        self.assertIn('| 数值相同但限定词不同 | 1 |', report.text)
+        self.assertIn('| 数值相同，仅普通近似词不同 | 1 | 0 | 1 |', report.text)
         self.assertIn('| 数值部分相同但单位不同 | 1 |', report.text)
 
     def test_exact_ratio_conversions_preserve_qualifiers_ranges_and_signs(self):

@@ -203,7 +203,9 @@ class ProvenanceGraph:
             detail["line"] = (body.count("\n", 0, body_start + detail["start"])
                               + self.documents[path].get("body_start_line", 1))
         line = body.count("\n", 0, body_start + min(detail["start"] for detail in details)) + 1
-        return [issue("🟡", "数值或引文证据待复核: " + ", ".join(detail["claim"] for detail in details),
+        level = "🟡" if any(detail["level"] == "🟡" for detail in details) else "🔵"
+        label = "数值表达建议: " if level == "🔵" else "数值或引文证据待复核: "
+        return [issue(level, label + ", ".join(detail["claim"] for detail in details),
                       "候选仅供回查，须核对指标、时间与归因；不自动更正事实", line, True,
                       category="evidence", details=details, sources=sorted(raw_paths))]
 

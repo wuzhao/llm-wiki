@@ -48,11 +48,12 @@ def candidate_groups(all_issues):
 
 
 def format_report_item(relative_path, issue, action_label="修改建议"):
-    item = f"- {issue['level']} {format_issue_location(relative_path, issue['line'])}\n  发现问题：{issue['problem']}"
+    label = "复核线索" if issue.get("category") == "evidence" else "发现问题"
+    item = f"- {issue['level']} {format_issue_location(relative_path, issue['line'])}\n  {label}：{issue['problem']}"
     if issue["action"]:
         item += f"\n  {action_label}：{issue['action']}"
     for detail in issue.get("details", []):
-        item += f"\n  - 主张 {inline_text(detail['claim'])}：{detail['label']}。{detail['action']}"
+        item += f"\n  - {detail.get('level', issue['level'])} 主张 {inline_text(detail['claim'])}：{detail['label']}。{detail['action']}"
         for candidate in detail["candidates"]:
             item += (f"\n    - 原文候选 {inline_text(candidate['literal'])}，"
                      f"{format_issue_location(candidate['path'], candidate['line'])}，列 {candidate['column']}："
@@ -62,24 +63,47 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
     return item
 
 
-def format_categories(items):
+def format_categories(items, level=None):
     result = ""
     for category, title in (("evidence", "证据待复核"), ("citation", "引用完整性"), ("other", "其他检查")):
         selected = [item for kind, item in items if kind == category]
         if selected:
+            if category == "evidence" and level == "🔵":
+                title = "证据表达建议"
             result += f"\n#### {title} ({len(selected)})\n\n" + "\n".join(selected) + "\n"
     return result
 
 
 def diagnostic_summary(all_issues):
     counts = Counter(detail["label"] for _, issue in all_issues for detail in issue.get("details", []))
+    levels = Counter((detail["label"], detail.get("level", issue["level"]))
+                     for _, issue in all_issues for detail in issue.get("details", []))
     if not counts:
         return ""
     report = ("### 证据诊断概览\n\n以下按未匹配的主张计数，一条告警可包含多个主张；不增加告警总数。"
               "分类仅帮助安排复核，候选未定位或口径差异均不能据此判为事实正确。\n\n"
-              "| 诊断 | 主张数 |\n| ---- | -----: |\n")
+              "| 诊断 | 主张数 | 🟡 待复核 | 🔵 建议 |\n| ---- | -----: | -------: | ------: |\n")
     for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
-        report += f"| {label} | {count} |\n"
+        report += f"| {label} | {count} | {levels[label, '🟡']} | {levels[label, '🔵']} |\n"
+    return report + "\n"
+
+
+def unlocated_review_queue(all_issues):
+    pages = defaultdict(list)
+    for path, issue in all_issues:
+        for detail in issue.get("details", []):
+            if detail["kind"] == "not-found":
+                pages[path].append(detail.get("line", issue["line"]))
+    if not pages:
+        return ""
+    report = ("### 未定位数值复核队列（按页）\n\n"
+              f"共 {len(pages)} 页、{sum(map(len, pages.values()))} 个未定位主张，仅提供回查导航，不增加告警计数。"
+              "未定位不等于编造，也不能直接认定为格式噪声。优先核对影响结论的数字、单位、期间和派生依据，"
+              "不按数量机械清零；完整论断与来源范围见下方详情。\n\n"
+              "| 页面与起始位置 | 未定位主张数 |\n| -------------- | -----------: |\n")
+    for path, lines in sorted(pages.items(), key=lambda item: (-len(item[1]), item[0])):
+        line = min((line for line in lines if line), default=None)
+        report += f"| {format_issue_location(path, line)} | {len(lines)} |\n"
     return report + "\n"
 
 
@@ -103,8 +127,9 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
         report += f"总页面 {checked} / 发现问题 {len(all_issues)}\n\n"
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
-    report += f"🔵 轻微: {severity_counts['🔵']} 个（架构规范建议）\n\n"
+    report += f"🔵 轻微: {severity_counts['🔵']} 个（表达或架构建议）\n\n"
     report += diagnostic_summary(all_issues)
+    report += unlocated_review_queue(all_issues)
 
     if all_issues and write_enabled:
         report += f"### ✅ 自动修复 ({len(auto_fixed)})\n\n"
@@ -113,12 +138,12 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
         report += f"### ⚠️ 需要人工介入 ({manual_count})\n\n"
         for level in ("🔴", "🟡", "🔵"):
             if manual[level]:
-                report += format_categories(manual[level])
+                report += format_categories(manual[level], level)
     elif all_issues:
         report += f"### ⚠️ 问题详情 ({len(all_issues)})\n\n"
         for level in ("🔴", "🟡", "🔵"):
             if manual[level]:
-                report += format_categories(manual[level])
+                report += format_categories(manual[level], level)
 
     report += candidate_groups(all_issues)
     return LintReport(report, severity_counts, len(auto_fixed), {level for level, items in manual.items() if items})

@@ -14,8 +14,9 @@ QUOTE_INTRO = re.compile(
     r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
 DIAGNOSTICS = {
     "year-abbreviation": ("可能是年份缩写，也可能是时长", "核对上下文与世纪；不自动将两位数年补为四位年份"),
+    "approximation-difference": ("数值相同，仅普通近似词不同", "建议核对约、左右等表达与断言强度；不视为原文精确支持"),
     "qualifier-difference": ("数值相同但限定词不同", "保留原文的近似、上下界或序数含义，核对后再修改论断"),
-    "unit-difference": ("数值部分相同但单位不同", "核对指标与单位；校准须补充独立依据，不能只改单位符号"),
+    "unit-difference": ("数值部分相同但单位不同", "核对指标与单位；校准须将支持采用值的实际依据加入本条脚注的 raw 来源链"),
     "unit-missing": ("候选存在单位省略或补全", "核对原文语境中的单位，不自动接受补全"),
     "not-found": ("未找到可比较的数值候选", "回查原文；派生值列出有来源的分量和公式，校准值补充依据"),
     "quote-not-found": ("直接引文措辞未定位", "核对原句；转述应明确标示，不能当作逐字引文"),
@@ -54,6 +55,8 @@ def related_quantity(claim, source):
             or len(claim.units) != len(source.units)):
         return None
     if claim.key[1:] == source.key[1:] and claim.key[0] != source.key[0]:
+        if {claim.key[0], source.key[0]} <= {"exact", "approx"}:
+            return "approximation-difference"
         return "qualifier-difference"
     if claim.key[0] != source.key[0]:
         return None
@@ -120,7 +123,10 @@ class EvidenceIndex:
                 kind = related_quantity(value, original)
                 if kind:
                     candidates.append((kind, document.candidate(original)))
-            candidates.sort(key=lambda item: (item[0], item[1]["path"], item[1]["start"]))
+            # An approximate candidate cannot hide a competing boundary, unit,
+            # or ordinal difference. Ambiguous attribution still needs review.
+            candidates.sort(key=lambda item: (item[0] == "approximation-difference",
+                                               item[0], item[1]["path"], item[1]["start"]))
             kind = candidates[0][0] if candidates else "not-found"
             selected = [candidate for reason, candidate in candidates if reason == kind]
             details[value.literal] = self.detail(value.literal, kind, text, value.start, value.end, selected)
@@ -133,7 +139,8 @@ class EvidenceIndex:
     @staticmethod
     def detail(literal, kind, text, start, end, candidates):
         label, action = DIAGNOSTICS[kind]
-        return {"claim": literal, "kind": kind, "label": label, "action": action,
+        level = "🔵" if kind == "approximation-difference" else "🟡"
+        return {"claim": literal, "kind": kind, "label": label, "action": action, "level": level,
                 "start": start, "context": excerpt(text, start, end),
                 "candidates": candidates[:MAX_CANDIDATES], "candidate_count": len(candidates)}
 

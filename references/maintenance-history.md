@@ -149,3 +149,13 @@
 - 使用项目 `.venv` 执行全量 unittest，202 项通过，包含新增的引用粒度回归 13 项；项目一致性检查与 `git diff --check` 通过。
 - Golden Sample 临时知识库完成初始化、文件与本地 HTTP URL 及粘贴文本摄入、单篇充分建页、仅提及暂缓、跨篇补足、同义复用、冲突保留与提炼检查点；默认 lint、重复输入和查询探索保持只读，安全修复仅追加日志。场景 16 的来源结构与引用边界由新增回归覆盖，场景 11 至场景 15 的状态、续扫、周期与版本由全量自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
 - 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_provenance.py`、`templates/AGENTS-template.md`、`templates/hub-template.md`、`templates/source-template.md`、`tests/test_citation_scope.py`。
+
+### 同日证据候选分级与复核队列发布验证
+
+- 版本从 `0.2.7` 升至 `0.2.8`，模板继续通过统一渲染读取版本。
+- 普通近似词差异降为蓝色表达建议，数值等价判断保持不变；上下界、序数、「近」的方向含义、单位、引文与未定位计数继续黄色待复核。同段混合主张以最高级别计一次，详情保留各主张级别。
+- 报告新增未定位数值的按页复核队列与主张级别统计，完整回查位置和上下文继续保留；单位校准提示明确要求对应脚注的 raw 来源链包含支持采用值的实际依据。
+- 同一份 `phanwiki/wiki` 快照的 97 页只读对照中，216 条提示总数不变，黄色从 215 条降为 205 条，蓝色从 1 条变为 11 条；23 个普通近似主张改为建议。全部 266 个证据主张位置保留，179 个未定位主张汇总到 46 页队列，27 个单位差异主张继续待复核；403 个知识文件的内容指纹不变。
+- 使用项目 `.venv` 执行全量 unittest，211 项通过，包含新增分级、混合论断、来源闭环、复核队列及退出码回归 9 项；项目一致性检查与 `git diff --check` 通过。
+- Golden Sample 临时知识库完成初始化、三类摄入、单篇充分建页、仅提及暂缓、跨篇补足、同义复用、冲突保留与提炼检查点；默认 lint、重复输入及查询探索保持只读，安全修复仅追加日志。场景 17 由新增自动化回归覆盖，场景 11 至场景 15 结合全量自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
+- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_evidence_priority.py`。
