@@ -38,6 +38,7 @@ for aliases, dimension, factor in (
     (("s", "秒"), "time", 1),
     (("分钟",), "time", 60),
     (("小时",), "time", 3600),
+    (("天", "整天"), "time", 86400),
     (("MB",), "bytes", 1000 ** 2),
     (("GB",), "bytes", 1000 ** 3),
     (("TB",), "bytes", 1000 ** 4),
@@ -112,6 +113,7 @@ LEXICAL_COUNT = re.compile(
     r"一次性|二次(?:分配|引用|创作|转载|开发|传播|函数|方程)"
     r"|[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)"
     r"|成(?:百上千|千上万)(?:个|条|项|种|次|人|位|家)?"
+    r"|七上八下|十之八九"
 )
 COMPOUND_UNIT = re.compile(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])")
 # A sign can be spoken as 负的; lexical 自负/担负/背负/胜负 are not signs.
@@ -138,7 +140,7 @@ PORE_OVER = re.compile(r'\b(?:pore|pores|pored|poring)(?:[ \t]+|[ \t]*\n[ \t]*)(
 PREDICATE_COUNT = re.compile(
     rf'找不到{SPACE}(?:{SIGN}{SPACE})?(?:{COMPOSITE}|{NUMBER})'
     rf'(?:{SPACE}(?:至|到|[-–—~～]){SPACE}(?:{COMPOSITE}|{NUMBER}))?'
-    rf'{SPACE}(?:{UNIT}|名)(?![A-Za-z0-9_{CN}%])'
+    rf'{SPACE}(?:{UNIT}|名)(?![0-9_{CN}%])'
 )
 
 
@@ -150,6 +152,7 @@ class Quantity:
     end: int = field(default=0, compare=False)
     units: tuple = field(default=(), compare=False)
     diagnostic: str = field(default='', compare=False)
+    adjacent_range: bool = field(default=False, compare=False)
 
 
 def chinese_integer(text):
@@ -312,17 +315,41 @@ def date_key(match):
     return ("date", prefix if prefix != "exact" else suffix, *values)
 
 
+def adjacent_bounds(text):
+    """Only consecutive ascending Chinese digits with one shared magnitude."""
+    match = re.fullmatch(r"([一二两三四五六七八九])([一二两三四五六七八九])([十百千]?[万亿]?)", text.strip())
+    if not match or DIGITS[match[2]] != DIGITS[match[1]] + 1:
+        return None
+    scale = chinese_integer(match[3]) if match[3] else 1
+    return tuple(Fraction(DIGITS[match[i]] * scale) for i in (1, 2))
+
+
 def quantity_units(match):
     units = [match["unit1"] or ("%" if match["percent1"] else ""),
              match["unit2"] or ("%" if match["percent2"] else "")]
     if match["range"]:
         units = [units[0] or units[1], units[1] or units[0]]
-    return tuple(unit.lower() if unit.lower() in EN_UNITS else unit
-                 for unit in units[:2 if match["range"] else 1])
+    selected = units[:2 if match["range"] else 1]
+    if not match["range"] and adjacent_bounds(match["number1"]):
+        selected *= 2
+    return tuple(unit.lower() if unit.lower() in EN_UNITS else unit for unit in selected)
 
 
 def quantity_key(match):
     units = quantity_units(match)
+    bounds = adjacent_bounds(match["number1"])
+    if bounds:
+        # An inherent approximate range is not an exact interval or a bound.
+        # Unsupported combinations remain a complete, literal-only candidate.
+        qualifiers = [QUALIFIERS.get((match[name] or "").lower(), "exact") for name in ("prefix", "suffix")]
+        if (match["range"] or any(q not in ("exact", "approx") for q in qualifiers)
+                or (match["percent1"] and match["unit1"])
+                or (match["sign1"] and match["inner_sign1"])):
+            return None
+        sign_text = match["sign1"] or match["inner_sign1"] or ""
+        sign = -1 if sign_text.lower().startswith(("-", "负", "negative")) else 1
+        dimension, factor = UNITS.get(units[0], ("number", 1))
+        return ("approx", *((dimension, value) for value in sorted(v * factor * sign for v in bounds)))
     if match["range"]:
         # Shared magnitudes (10 至 20 万) need language interpretation.
         if (match["number2"].endswith(tuple("百千万亿")) and not match["unit1"]
@@ -400,7 +427,12 @@ def quantities(text):
             continue
         # Never accept a prefix of a larger numeric token or identifier.
         following = normalized[match.end():match.end() + 1]
-        if (following and re.match(rf"[A-Za-z0-9_{CN}%]", following)
+        # A Chinese unit closes the quantity even when an English object is
+        # attached without whitespace (四五十个AI agent). Identifiers and numeric
+        # continuations must still not donate a scalar prefix as evidence.
+        final_unit = match["unit2"] if match["range"] else match["unit1"]
+        attached_word = bool(final_unit and not final_unit.isascii() and re.fullmatch(r"[A-Za-z]", following))
+        if (following and re.match(rf"[A-Za-z0-9_{CN}%]", following) and not attached_word
                 or re.match(r"\.[0-9]", normalized[match.end():])):
             continue
         number = match["number1"] or ""
@@ -423,5 +455,6 @@ def quantities(text):
         end = compound.end() if compound else match.end()
         consumed_end = end
         result.append((match.start(), Quantity(text[match.start():end].strip(), None if compound else quantity_key(match),
-                                             match.start(), end, quantity_units(match))))
+                                             match.start(), end, quantity_units(match),
+                                             adjacent_range=bool(adjacent_bounds(number)))))
     return [quantity for _, quantity in sorted(result, key=lambda item: item[0])]

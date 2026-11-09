@@ -67,7 +67,7 @@
     "synthesis_review_interval": 5,
     "max_search_snippet_chars": 240,
     "max_lint_batch_pages": 200,
-    "max_log_bytes": 102400,
+    "max_log_bytes": 262144,
     "review_after_days": 180,
     "max_source_bytes": 10485760,
     "url_timeout_seconds": 30

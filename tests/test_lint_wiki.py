@@ -128,6 +128,13 @@ class LintWikiTests(unittest.TestCase):
         self.assertEqual(issues[0]['problem'], '日志超过体积阈值')
         self.assertIn('换月不消除历史超限', issues[0]['action'])
 
+    def test_log_limit_uses_configured_utf8_bytes_and_allows_exact_boundary(self):
+        limit = SCHEMA['limits']['max_log_bytes']
+        body = '记' * (limit // 3) + 'x' * (limit % 3)
+        self.assertEqual(heuristic_checks('wiki/logs/200001.md', body, {'type': 'log'}, SCHEMA), [])
+        issues = heuristic_checks('wiki/logs/200001.md', body + 'x', {'type': 'log'}, SCHEMA)
+        self.assertEqual([item['problem'] for item in issues], ['日志超过体积阈值'])
+
     def test_content_page_inbound_link_clears_target_orphan(self):
         self.write_concept("alpha")
         self.write_concept("beta", "[[concepts/alpha]]")

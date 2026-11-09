@@ -5,6 +5,59 @@ from wiki_provenance import claim_literals, missing_literals
 
 
 class NumericEvidenceTests(unittest.TestCase):
+    def test_adjacent_chinese_numerals_are_meaningful_approximate_ranges(self):
+        from wiki_numbers import quantities
+        for claim, low, high in [('四五十个', 40, 50), ('五六百元', 500, 600),
+                                 ('三四千人', 3000, 4000), ('五六百万元', 5000000, 6000000),
+                                 ('两三天', 2 * 86400, 3 * 86400), ('一两个月', 1, 2)]:
+            with self.subTest(claim=claim):
+                quantity, = quantities(claim)
+                self.assertEqual(quantity.key[0], 'approx')
+                self.assertTrue(quantity.adjacent_range)
+                self.assertEqual([v for _, v in quantity.key[1:]], [low, high])
+                self.assertEqual(missing_literals(claim, claim), [])
+                self.assertEqual(missing_literals(claim, '没有对应数量'), [claim])
+        for claim, raw in [('四五十个', '40个'), ('四五十个', '45个'), ('四五十个', '50个'),
+                           ('五六百元', '550元'), ('三四千人', '3500人'),
+                           ('五六百万元', '550万元'), ('两三天', '2.5天'),
+                           ('兩三天', '两三天'), ('约四五十个', '45个')]:
+            with self.subTest(claim=claim, raw=raw):
+                self.assertEqual(missing_literals(claim, raw), [])
+        self.assertEqual(missing_literals('约1至2年', '一两年'), [])
+        self.assertEqual(missing_literals('一两年', '约1至2年'), [])
+        self.assertTrue(missing_literals('约40至50个', '45个'))
+        self.assertEqual(missing_literals('一天', '一整天'), [])
+        self.assertEqual(missing_literals('两三天', '两整天'), [])
+        self.assertTrue(missing_literals('两三天', '四整天'))
+
+    def test_adjacent_range_location_preserves_direction_units_and_qualifiers(self):
+        for claim, raw in [('四五十个', '39个'), ('四五十个', '51个'),
+                           ('四五十个', '45条'), ('四五十个', '45'),
+                           ('四五十个', '超过45个'), ('四五十个', '不足45个'),
+                           ('四五十个', '第45个'), ('四五十个', '约45个'),
+                           ('超过四五十个', '45个'), ('第两三个', '2个'),
+                           ('四五十个', '负45个'), ('45个', '四五十个'),
+                           ('四五十个', '三四十个'), ('四五十个', '四五十个至六七十个'),
+                           ('两三天', '2个月'), ('三五个', '4个'),
+                           ('五四十个', '45个'), ('四五十个', '45个/组'),
+                           ('原文：「四五十个」', '45个')]:
+            with self.subTest(claim=claim, raw=raw):
+                self.assertTrue(missing_literals(claim, raw))
+        self.assertEqual(claim_literals('七上八下，十之八九'), set())
+        self.assertEqual(claim_literals('十之八九个例子'), set())
+
+    def test_chinese_count_unit_closes_token_before_english_object(self):
+        for claim, raw in [('四五十个 Agent', '四五十个AI agent'),
+                           ('四五十个 Agent', '45个AI agent'),
+                           ('三个 Agent', '3个AI agent')]:
+            with self.subTest(claim=claim, raw=raw):
+                self.assertEqual(missing_literals(claim, raw), [])
+        for raw in ('145个AI agent', '四五十个3', '四五十个_id', '四五十个/组'):
+            self.assertTrue(missing_literals('四五十个 Agent', raw))
+        self.assertEqual(claim_literals('找不到四五十个AI agent'), {'找不到四五十个'})
+        self.assertTrue(missing_literals('四五十个 Agent', '找不到四五十个AI agent'))
+        self.assertTrue(missing_literals('找不到四五十个AI agent', '45个AI agent'))
+
     def test_yu_qualifiers_keep_strict_and_negated_bounds(self):
         for claim, raw in [('逾90%', 'over 90%'), ('逾 90%', '超过90%'),
                            ('不逾90%', '不超过90%'), ('未逾90%', 'at most 90%')]:

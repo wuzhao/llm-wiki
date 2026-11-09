@@ -112,7 +112,17 @@ class EvidenceIndex:
         self.literal_forms = {value.literal for _, value in self.values}
 
     def contains(self, value):
-        return value.literal in self.literal_forms if value.key is None else value.key in self.keys
+        if value.key is None:
+            return value.literal in self.literal_forms
+        if value.key in self.keys:
+            return True
+        if value.adjacent_range and value.key[0] == "approx":
+            (_, (dimension, low), (_, high)) = value.key
+            # Directional location only: a source point can locate an approximate
+            # claim, but a source approximation cannot establish an exact point.
+            return any(len(key) == 2 and key[0] == "exact" and key[1][0] == dimension
+                       and low <= key[1][1] <= high for key in self.keys)
+        return False
 
     def missing(self, text):
         text = claim_text(text)

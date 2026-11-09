@@ -11,6 +11,16 @@ from wiki_provenance import ProvenanceGraph, issue
 
 
 class EvidencePriorityTests(unittest.TestCase):
+    def test_adjacent_ranges_leave_review_only_when_located_in_selected_source(self):
+        claim = '使用四五十个 Agent'
+        for raw in ('使用四五十个AI agent', '使用45个AI agent'):
+            index = EvidenceIndex([EvidenceDocument('raw/a.md', raw)])
+            self.assertEqual(index.diagnose(claim), [])
+            self.assertEqual(index.missing(claim), [])
+        index = EvidenceIndex([EvidenceDocument('raw/a.md', '没有相应数量')])
+        detail, = index.diagnose(claim)
+        self.assertEqual((detail['claim'], detail['kind'], detail['level']), ('四五十个', 'not-found', '🟡'))
+
     def test_find_no_goes_to_semantic_review_instead_of_bound_comparison(self):
         index = EvidenceIndex([EvidenceDocument('raw/a.md', '一个承认此事的人')])
         detail = index.diagnose('再也找不到一个承认此事的人')[0]
