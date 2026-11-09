@@ -11,6 +11,38 @@ from wiki_provenance import ProvenanceGraph, issue
 
 
 class EvidencePriorityTests(unittest.TestCase):
+    def test_find_no_goes_to_semantic_review_instead_of_bound_comparison(self):
+        index = EvidenceIndex([EvidenceDocument('raw/a.md', '一个承认此事的人')])
+        detail = index.diagnose('再也找不到一个承认此事的人')[0]
+        self.assertEqual(detail['claim'], '找不到一个')
+        self.assertEqual(detail['kind'], 'predicate-count')
+        self.assertEqual(detail['level'], '🟡')
+        self.assertFalse(detail['candidates'])
+        self.assertEqual(detail['context'], '再也找不到一个承认此事的人')
+
+    def test_translated_counts_are_candidates_not_approvals(self):
+        for claim, raw in [('225个', '225 folders'), ('6个', 'six files'), ('三个', 'three resources'),
+                           ('三次', 'three times'), ('三倍', 'three times')]:
+            with self.subTest(claim=claim):
+                index = EvidenceIndex([EvidenceDocument('raw/a.md', raw)])
+                self.assertTrue(index.missing(claim))
+                detail = index.diagnose(claim)[0]
+                self.assertEqual(detail['kind'], 'translated-count')
+                self.assertEqual(detail['level'], '🟡')
+                self.assertEqual(detail['candidates'][0]['literal'], raw)
+
+    def test_workbench_groups_repetitions_without_hiding_context_or_changing_totals(self):
+        findings = []
+        for text, line in [('只有一人成功', 20), ('其中一人失败', 30)]:
+            findings.append(('wiki/a.md', issue('🟡', '数值待复核', '', line,
+                            details=EvidenceIndex([]).diagnose(text), category='evidence')))
+        result = build_report(findings, 1)
+        self.assertIn('合为 1 组', result.text)
+        self.assertIn('只有一人成功', result.text)
+        self.assertIn('其中一人失败', result.text)
+        self.assertEqual(result.severity_counts['🟡'], 2)
+        self.assertIn('🟡', result.unresolved_levels)
+
     def detail(self, claim, raw):
         return EvidenceIndex([EvidenceDocument('raw/a.md', raw)]).diagnose(claim)[0]
 

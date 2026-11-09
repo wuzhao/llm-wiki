@@ -3,6 +3,7 @@ import argparse
 import datetime
 import fcntl
 import hashlib
+import json
 import os
 import re
 import sys
@@ -32,6 +33,7 @@ from wiki_config import (
 from wiki_io import WritePlan, atomic_write_text, checked_destination
 from wiki_scan import load_snapshot
 from wiki_lint_report import build_report
+from wiki_reviews import annotate_reviews, checker_fingerprint, load_reviews
 from markdown_links import mask_non_prose, standard_link_occurrences, standard_link_spans, wikilink_spans, unescape_target
 from wiki_links import build_target_index, is_allowed_target, resolve_standard_link, resolve_wikilink
 from wiki_metadata import body_sha256, parse_datetime, split_frontmatter
@@ -792,9 +794,16 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Preview fixes without writing")
     parser.add_argument("--strict-sources", action="store_true", help="Treat inaccessible external source files as errors")
     parser.add_argument("--report-file", help="Path to save the markdown report")
+    parser.add_argument("--review-file", help="Read explicit semantic review records from JSON; never changes severity")
+    parser.add_argument("--review-template", help="Export current review records as JSON outside the knowledge base")
     parser.add_argument("--fail-on", choices=("error", "warning", "any"),
                         help="Exit 1 when unresolved issues meet this severity threshold")
     args = parser.parse_args()
+
+    try:
+        reviews = load_reviews(args.review_file)
+    except (OSError, ValueError) as exc:
+        parser.error(f"无法读取复核记录: {exc}")
 
     try:
         schema = load_schema()
@@ -848,6 +857,15 @@ def main():
         if (report_path.is_symlink() or is_allowed_target(report_target, target_index)
                 or report_target == kb_dir / "AGENTS.md"):
             parser.error("报告路径必须位于 raw、wiki 之外，且不能覆盖 AGENTS.md 或符号链接")
+    review_template = Path(args.review_template).absolute() if args.review_template else None
+    if review_template:
+        if (review_template.is_symlink() or review_template.resolve().is_relative_to(kb_dir)
+                or review_template.exists()):
+            parser.error("复核模板必须使用知识库之外的新文件，不能覆盖已有文件或符号链接")
+        if report_path and review_template.resolve() == report_path.resolve():
+            parser.error("报告与复核模板不能使用同一路径")
+    if args.review_file and report_path and Path(args.review_file).resolve() == report_path.resolve():
+        parser.error("报告不能覆盖复核记录")
     markdown_files = set(selected_files)
     if args.lint_files:
         markdown_files.add(index_path)
@@ -889,8 +907,11 @@ def main():
     plan, all_issues = plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot,
                                     index_relative, write_enabled, args.strict_sources, all_issues)
 
+    review_data, stale_reviews = annotate_reviews(all_issues, snapshot, reviews, checker_fingerprint())
     result = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run)
     report = result.text
+    if stale_reviews:
+        report += f"\n复核记录提示：{stale_reviews} 条已复核记录未复用（内容、来源、规则、证据片段或本次范围不匹配），当前候选仍待复核。\n"
 
     if write_enabled:
         written = []
@@ -901,6 +922,14 @@ def main():
             print(f"lint 事务未完成: {exc}；已写入: {', '.join(written) or '无'}；请检查日志并恢复后重跑", file=sys.stderr)
             return 2
 
+    if review_template:
+        try:
+            review_template.parent.mkdir(parents=True, exist_ok=True)
+            with review_template.open('x', encoding='utf-8') as stream:
+                stream.write(json.dumps(review_data, ensure_ascii=False, indent=2) + '\n')
+        except OSError as exc:
+            print(f"复核模板写入失败: {exc}", file=sys.stderr)
+            return 2
     if report_path:
         try:
             report_path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,6 +5,83 @@ from wiki_provenance import claim_literals, missing_literals
 
 
 class NumericEvidenceTests(unittest.TestCase):
+    def test_yu_qualifiers_keep_strict_and_negated_bounds(self):
+        for claim, raw in [('逾90%', 'over 90%'), ('逾 90%', '超过90%'),
+                           ('不逾90%', '不超过90%'), ('未逾90%', 'at most 90%')]:
+            with self.subTest(claim=claim):
+                self.assertEqual(missing_literals(claim, raw), [])
+                self.assertEqual(missing_literals(raw, claim), [])
+        for claim, raw in [('90%', '逾90%'), ('不逾90%', '逾90%'),
+                           ('未逾90%', '逾90%'), ('逾90%', '逾期90%')]:
+            self.assertTrue(missing_literals(claim, raw))
+        self.assertTrue(missing_literals('原文：「逾90%」', 'over 90%'))
+
+    def test_pore_over_is_a_verb_but_independent_over_remains_a_bound(self):
+        for phrase in ('pore over', 'pores over', 'pored over', 'poring over', 'PORED OVER', 'pored \n over', 'pored\nover'):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(missing_literals('35年', phrase + ' 35 years of research'), [])
+                self.assertTrue(missing_literals('超过35年', phrase + ' 35 years of research'))
+        for phrase in ('lasted over', 'pored. Over', 'pored\n\nOver'):
+            self.assertTrue(missing_literals('35年', phrase + ' 35 years'))
+        self.assertEqual(missing_literals('超过35年', 'lasted over 35 years'), [])
+        self.assertEqual(missing_literals('35至40年', 'pored over 35 to 40 years of research'), [])
+        self.assertTrue(missing_literals('1.91亿', '1亿 pored over 9100万'))
+        self.assertTrue(missing_literals('原文：「pored over 35 years」', '35年'))
+
+    def test_find_no_preserves_predicate_and_does_not_accept_unrelated_counts(self):
+        self.assertEqual(claim_literals('再也找不到一个承认此事的人'), {'找不到一个'})
+        self.assertEqual(claim_literals('找不到3名参与者'), {'找不到3名'})
+        self.assertEqual(claim_literals('找不到3到5名参与者'), {'找不到3到5名'})
+        self.assertEqual(claim_literals('找不到两个月的记录'), {'找不到两个月'})
+        for claim, raw in [('找不到一个承认此事的人', '一个人承认此事'),
+                           ('不到一个', '找不到一个'), ('一个', '找不到一个'),
+                           ('找不到3名参与者', '3名参与者'), ('3人', '找不到3人')]:
+            self.assertTrue(missing_literals(claim, raw))
+        self.assertEqual(missing_literals('找不到一个', '再也找不到一个承认此事的人'), [])
+        self.assertEqual(missing_literals('人数不到3人', '人数少于3人'), [])
+        self.assertTrue(missing_literals('人数不到3人', '3人'))
+        self.assertTrue(missing_literals('原文：「找不到一个人」', '未找到支持者'))
+
+    def test_traditional_quantity_aliases_preserve_amounts_and_quotes(self):
+        for left, right in [('143 亿美元', '143億美元'), ('25 亿美元', '25 億美元'),
+                            ('1300亿至1450亿美元', '1300億到1450億美元'),
+                            ('24小时', '24 小時'), ('两个', '兩個'), ('负3.5%', '負3.5%')]:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(missing_literals(left, right), [])
+                self.assertEqual(missing_literals(right, left), [])
+        self.assertTrue(missing_literals('143亿美元', '143萬美元'))
+        self.assertTrue(missing_literals('原文：「143亿美元」', '143億美元'))
+
+    def test_english_time_quantities_and_complete_unsupported_forms(self):
+        for left, right in [('20分钟', 'twenty minutes'), ('约12小时', 'roughly twelve hours'),
+                            ('两个月', '2 months'), ('2023年', '2023 years'),
+                            ('21秒', 'twenty-one seconds'), ('120秒', 'one hundred and twenty seconds'),
+                            ('2000000秒', 'two million seconds'), ('负20秒', 'negative twenty seconds'),
+                            ('超过20秒', 'over twenty seconds'), ('2至3小时', 'two to three hours')]:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(missing_literals(left, right), [])
+                self.assertEqual(missing_literals(right, left), [])
+        for claim, raw in [('5分钟', 'one point five minutes'), ('20秒', 'negative twenty seconds'),
+                           ('20秒', 'over twenty seconds'), ('100秒', 'one hundred thousand seconds'),
+                           ('20分钟', 'twenty milliseconds'), ('20秒', 'twenty seconds/step')]:
+            with self.subTest(claim=claim, raw=raw):
+                self.assertTrue(missing_literals(claim, raw))
+        self.assertTrue(missing_literals('2018年', '18 years'))
+        self.assertTrue(missing_literals('one hundred twenty three four seconds', '1234秒'))
+        self.assertEqual(missing_literals('20分钟', 'one hour and twenty minutes'), [])
+
+    def test_month_and_word_boundaries_do_not_create_false_counts(self):
+        self.assertEqual(claim_literals('两个月后，一两个月前'), {'两个月', '一两个月'})
+        self.assertTrue(missing_literals('两个', '两个月'))
+        self.assertEqual(claim_literals('成千上万个会话与成百上千种工具'), set())
+        self.assertEqual(claim_literals('Sonnet 4.5 上下文焦虑'), {'4.5'})
+        self.assertEqual(claim_literals('4.5 上下'), {'4.5 上下'})
+        self.assertTrue(missing_literals('1.91亿', '1亿一次性9100万'))
+        self.assertTrue(missing_literals('一百二次引用', '二次引用'))
+        for literal in ('千亿美元', '三千余万美元', '五六百万元', '只有一人', '第三次', '半年'):
+            with self.subTest(literal=literal):
+                self.assertTrue(missing_literals(literal, '没有依据'))
+
     def test_equivalent_quantities_match_in_both_directions(self):
         pairs = (
             ('2个', '两个'), ('2 个', '二个'), ('42ms', '四十二毫秒'),

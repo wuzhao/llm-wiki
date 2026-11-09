@@ -54,6 +54,9 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
         item += f"\n  {action_label}：{issue['action']}"
     for detail in issue.get("details", []):
         item += f"\n  - {detail.get('level', issue['level'])} 主张 {inline_text(detail['claim'])}：{detail['label']}。{detail['action']}"
+        if detail.get('review'):
+            review = detail['review']
+            item += f"\n    已复核（{inline_text(review['status'])}）：{inline_text(review['reason'])}；复核者 {inline_text(review['reviewer'])}"
         for candidate in detail["candidates"]:
             item += (f"\n    - 原文候选 {inline_text(candidate['literal'])}，"
                      f"{format_issue_location(candidate['path'], candidate['line'])}，列 {candidate['column']}："
@@ -61,6 +64,39 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
         if detail["candidate_count"] > len(detail["candidates"]):
             item += f"\n    - 共 {detail['candidate_count']} 处候选，仅展示前 {len(detail['candidates'])} 处；需消歧。"
     return item
+
+
+def review_groups(all_issues):
+    groups = defaultdict(list)
+    for path, finding in all_issues:
+        for detail in finding.get('details', []):
+            key = (path, detail['claim'], detail['kind'], tuple(finding.get('sources', [])))
+            groups[key].append((finding, detail))
+    if not groups:
+        return ''
+    reviewed = sum(bool(d.get('review')) for rows in groups.values() for _, d in rows)
+    total = sum(map(len, groups.values()))
+    pending_groups = sum(any(not d.get('review') for _, d in rows) for rows in groups.values())
+    result = (f'### Agent 复核工作台\n\n{total} 个主张按同页、同表达、同诊断与同来源范围合为 {len(groups)} 组；'
+              f'其中 {pending_groups} 组待复核，{reviewed} 个主张已有有效复核记录。'
+              '分组不代表同一事实，需核对组内每处语境；原始告警数、严重级别与退出码不变。\n\n'
+              'Agent 先核对泛指、作者自编结构、翻译候选与已有记录；只有证据缺口、冲突或需要用户取舍的内容进入用户决策清单。\n\n')
+    for (path, claim, kind, sources), rows in groups.items():
+        pending = any(not d.get('review') for _, d in rows)
+        state = '待复核' if pending else '已复核'
+        result += f'<details>\n<summary>{state}：{inline_text(path)}，{inline_text(claim)}，{len(rows)} 处</summary>\n\n'
+        result += rows[0][1]['label'] + '。\n\n'
+        if sources:
+            result += '来源范围：' + '、'.join(format_issue_location(p) for p in sources) + '\n\n'
+        for finding, detail in rows:
+            result += f"- {format_issue_location(path, detail.get('line', finding.get('line')))}：{inline_text(detail['context'])}\n"
+            if detail.get('review'):
+                review = detail['review']
+                result += f"  已复核：{inline_text(review['reason'])}（{inline_text(review['reviewer'])}，{inline_text(review['reviewed_at'])}）\n"
+            if detail.get('review_id'):
+                result += f"  复核 id：`{detail['review_id']}`\n"
+        result += '\n</details>\n\n'
+    return result
 
 
 def format_categories(items, level=None):
@@ -130,6 +166,7 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
     report += f"🔵 轻微: {severity_counts['🔵']} 个（表达或架构建议）\n\n"
     report += diagnostic_summary(all_issues)
     report += unlocated_review_queue(all_issues)
+    report += review_groups(all_issues)
 
     if all_issues and write_enabled:
         report += f"### ✅ 自动修复 ({len(auto_fixed)})\n\n"
@@ -140,10 +177,22 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
             if manual[level]:
                 report += format_categories(manual[level], level)
     elif all_issues:
-        report += f"### ⚠️ 问题详情 ({len(all_issues)})\n\n"
-        for level in ("🔴", "🟡", "🔵"):
-            if manual[level]:
-                report += format_categories(manual[level], level)
+        other_findings = [(path, finding) for path, finding in all_issues if not finding.get('details')]
+        if other_findings:
+            report += '### 引用、来源与结构检查\n\n'
+            for level in ('🔴', '🟡', '🔵'):
+                selected = [(finding.get('category', 'other'), format_report_item(path, finding))
+                            for path, finding in other_findings if finding['level'] == level]
+                report += format_categories(selected, level)
+        evidence_findings = [(path, finding) for path, finding in all_issues if finding.get('details')]
+        if evidence_findings:
+            report += '<details>\n<summary>完整证据逐条诊断（保留全部证据告警与原文候选）</summary>\n\n'
+            report += f"### ⚠️ 证据问题详情 ({len(evidence_findings)})\n\n"
+            for level in ("🔴", "🟡", "🔵"):
+                selected = [(finding.get('category', 'evidence'), format_report_item(path, finding))
+                            for path, finding in evidence_findings if finding['level'] == level]
+                report += format_categories(selected, level)
+            report += '\n</details>\n'
 
     report += candidate_groups(all_issues)
     return LintReport(report, severity_counts, len(auto_fixed), {level for level, items in manual.items() if items})

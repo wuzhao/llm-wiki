@@ -7,7 +7,7 @@ from fractions import Fraction
 
 # One-to-one translation keeps diagnostic spans in the original text intact.
 WIDTH = str.maketrans({**{chr(n): chr(n - 0xFEE0) for n in range(0xFF01, 0xFF5F)},
-                      "\u3000": " ", "−": "-"})
+                      "\u3000": " ", "−": "-", **dict(zip("億萬兩個條項種時鐘負點數幾餘", "亿万两个条项种时钟负点数几余"))})
 DIGITS = dict(zip("零〇一二三四五六七八九", (0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9)))
 DIGITS["两"] = 2
 SMALL = {"十": 10, "百": 100, "千": 1000}
@@ -15,6 +15,13 @@ CN = "零〇一二两三四五六七八九十百千万亿点几多余半"
 SPACE = r"[^\S\n]*"
 # 百 in 百分点 belongs to the unit, not the preceding numeric value.
 NUMBER = rf"(?:数{SPACE}(?=[十百千万亿]))?(?:(?:(?!百分点)[0-9{CN}])+(?:,[0-9]+)*(?:\.[0-9]+)?(?:(?!百分点)[十百千万亿])*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+EN_SMALL = dict(zip(
+    'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'.split(), range(20)))
+EN_TENS = dict(zip('twenty thirty forty fifty sixty seventy eighty ninety'.split(), range(20, 100, 10)))
+EN_SCALES = {'hundred': 100, 'thousand': 1000, 'million': 1000000, 'billion': 1000000000}
+EN_WORD = '(?:' + '|'.join((*EN_SMALL, *EN_TENS, *EN_SCALES, 'and', 'point', 'half')) + ')'
+EN_NUMBER = rf'(?i:\b(?!and\b|point\b){EN_WORD}(?:[ \t-]+{EN_WORD})*\b)'
+NUMBER = rf'(?:{NUMBER}|{EN_NUMBER})'
 # Keep adjacent magnitude components atomic, including unsupported orders. Do
 # not join across punctuation, citations, line breaks or repeated explicit units.
 COMPOSITE = rf"(?:[0-9]+{SPACE}[十百千万亿]{SPACE})+[0-9]+{SPACE}[十百千万亿](?![0-9{CN}])"
@@ -24,6 +31,7 @@ COMPOSITE = rf"(?:[0-9]+{SPACE}[十百千万亿]{SPACE})+[0-9]+{SPACE}[十百千
 UNITS = {unit: (unit, Fraction(1)) for unit in
          ("个", "条", "项", "种", "次", "人", "位", "家", "年", "月", "倍", "元", "美元", "%", "‰", "个百分点")}
 for aliases, dimension, factor in (
+    (("个月",), "月", 1),
     (("%",), "ratio", Fraction(1, 100)),
     (("‰",), "ratio", Fraction(1, 1000)),
     (("ms", "毫秒"), "time", Fraction(1, 1000)),
@@ -39,21 +47,32 @@ for aliases, dimension, factor in (
     (("百分点",), "个百分点", 1),
 ):
     UNITS.update({alias: (dimension, Fraction(factor)) for alias in aliases})
-UNIT = "(?:" + "|".join(sorted(UNITS, key=len, reverse=True)) + ")"
+EN_UNITS = {}
+for word, dimension, factor in (
+    ('second', 'time', 1), ('minute', 'time', 60), ('hour', 'time', 3600),
+    ('year', '年', 1), ('month', '月', 1), ('folder', 'count:folder', 1),
+    ('file', 'count:file', 1), ('resource', 'count:resource', 1), ('time', 'count:time', 1),
+):
+    for alias in (word, word + 's'):
+        EN_UNITS[alias] = (dimension, Fraction(factor))
+UNITS.update(EN_UNITS)
+UNIT = ('(?:(?i:' + '|'.join(sorted(EN_UNITS, key=len, reverse=True)) + r')\b|'
+        + '|'.join(sorted((u for u in UNITS if u not in EN_UNITS), key=len, reverse=True)) + ')')
 QUALIFIERS = {
     "大约": "approx", "大概": "approx", "约为": "approx", "约": "approx", "左右": "approx", "上下": "approx",
     "≈": "approx", "~": "approx", "～": "approx",
     "近": "near", "至少": "gte", "不少于": "gte", "不低于": "gte", "以上": "gte", "≥": "gte", ">=": "gte",
-    "至多": "lte", "不超过": "lte", "以下": "lte", "以内": "lte", "≤": "lte", "<=": "lte",
+    "至多": "lte", "不超过": "lte", "不逾": "lte", "未逾": "lte", "以下": "lte", "以内": "lte", "≤": "lte", "<=": "lte",
     "大于等于": "gte", "不小于": "gte", "小于等于": "lte", "不大于": "lte",
-    "超过": "gt", "多于": "gt", "大于": "gt", "高于": "gt", ">": "gt",
+    "超过": "gt", "逾": "gt", "多于": "gt", "大于": "gt", "高于": "gt", ">": "gt",
     "不足": "lt", "不到": "lt", "少于": "lt", "小于": "lt", "低于": "lt", "<": "lt", "第": "ordinal",
-    "about": "approx", "approximately": "approx", "around": "approx",
+    "about": "approx", "approximately": "approx", "around": "approx", "roughly": "approx",
     "at least": "gte", "at most": "lte", "more than": "gt", "less than": "lt",
+    "over": "gt", "under": "lt", "up to": "lte", "almost": "near",
 }
 PREFIX = "(?:" + "|".join(re.escape(q) for q in sorted(QUALIFIERS, key=len, reverse=True)
-                          if not q.isascii()) + r"|>=|<=|>|<|~|(?i:\babout|\bapproximately|\baround|\bat least|\bat most|\bmore than|\bless than))"
-SUFFIX = r"(?:以上|以下|以内|左右|上下)"
+                          if not q.isascii()) + r"|>=|<=|>|<|~|(?i:\babout|\bapproximately|\baround|\broughly|\bat least|\bat most|\bmore than|\bless than|\bover|\bunder|\bup to|\balmost))"
+SUFFIX = r"(?:以上|以下|以内|左右|上下(?!文))"
 
 # Full dates are atomic. Numeric month/day order without a leading year remains
 # opaque, while named English months and Chinese 年/月/日 are unambiguous.
@@ -92,10 +111,11 @@ DATE_TOKEN = re.compile(
 LEXICAL_COUNT = re.compile(
     r"一次性|二次(?:分配|引用|创作|转载|开发|传播|函数|方程)"
     r"|[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)"
+    r"|成(?:百上千|千上万)(?:个|条|项|种|次|人|位|家)?"
 )
 COMPOUND_UNIT = re.compile(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])")
 # A sign can be spoken as 负的; lexical 自负/担负/背负/胜负 are not signs.
-SIGN = rf"(?:[+\-]|正(?:{SPACE}的)?|(?<![自担背胜])负(?:{SPACE}的)?)"
+SIGN = rf"(?:[+\-]|正(?:{SPACE}的)?|(?<![自担背胜])负(?:{SPACE}的)?|(?i:\bnegative\b|\bpositive\b))"
 
 
 def endpoint(suffix):
@@ -109,8 +129,16 @@ def endpoint(suffix):
 TOKEN = re.compile(
     rf"(?<![A-Za-z0-9_.{CN}])"
     rf"(?:(?P<prefix>{PREFIX}){SPACE})?{endpoint('1')}"
-    rf"(?:{SPACE}(?P<range>至|到|[-–—~～]){SPACE}{endpoint('2')})?"
+    rf"(?:{SPACE}(?P<range>至|到|[-–—~～]|(?i:\bto\b)){SPACE}{endpoint('2')})?"
     rf"(?:{SPACE}(?P<suffix>{SUFFIX}))?"
+)
+# These are lexical predicates, not numeric bounds. Preserve the complete
+# Chinese predicate as an opaque candidate rather than accepting a bare count.
+PORE_OVER = re.compile(r'\b(?:pore|pores|pored|poring)(?:[ \t]+|[ \t]*\n[ \t]*)(over)\b', re.I)
+PREDICATE_COUNT = re.compile(
+    rf'找不到{SPACE}(?:{SIGN}{SPACE})?(?:{COMPOSITE}|{NUMBER})'
+    rf'(?:{SPACE}(?:至|到|[-–—~～]){SPACE}(?:{COMPOSITE}|{NUMBER}))?'
+    rf'{SPACE}(?:{UNIT}|名)(?![A-Za-z0-9_{CN}%])'
 )
 
 
@@ -121,6 +149,7 @@ class Quantity:
     start: int = field(default=0, compare=False)
     end: int = field(default=0, compare=False)
     units: tuple = field(default=(), compare=False)
+    diagnostic: str = field(default='', compare=False)
 
 
 def chinese_integer(text):
@@ -169,7 +198,48 @@ def chinese_integer(text):
     return total if total else None
 
 
+def english_integer(text):
+    """A bounded grammar: reject abbreviated scales and malformed word lists."""
+    words = text.lower().replace('-', ' ').split()
+    def below_hundred(parts):
+        if len(parts) == 1:
+            return EN_SMALL.get(parts[0], EN_TENS.get(parts[0]))
+        if len(parts) == 2 and parts[0] in EN_TENS and 0 < EN_SMALL.get(parts[1], 0) < 10:
+            return EN_TENS[parts[0]] + EN_SMALL[parts[1]]
+        return None
+    def below_thousand(parts):
+        if len(parts) >= 2 and parts[1] == 'hundred' and 0 < EN_SMALL.get(parts[0], 0) < 10:
+            rest = parts[2:]
+            if not rest:
+                return EN_SMALL[parts[0]] * 100
+            if rest[0] == 'and':
+                rest = rest[1:]
+            low = below_hundred(rest)
+            return EN_SMALL[parts[0]] * 100 + low if low is not None and low > 0 else None
+        return below_hundred(parts)
+    total, start, previous = 0, 0, 1000000000000
+    for i, word in enumerate(words):
+        if word not in ('thousand', 'million', 'billion'):
+            continue
+        scale = EN_SCALES[word]
+        high = below_thousand(words[start:i])
+        if scale >= previous or high is None or high <= 0:
+            return None
+        total += high * scale
+        previous, start = scale, i + 1
+    rest = words[start:]
+    if total and not rest:
+        return total
+    if total and rest and rest[0] == 'and':
+        rest = rest[1:]
+    low = below_thousand(rest)
+    return total + low if low is not None and (not total or 0 < low < previous) else None
+
+
 def number_value(text, unit):
+    if re.fullmatch(EN_NUMBER, text):
+        value = english_integer(text)
+        return Fraction(value) if value is not None else None
     text = re.sub(r"[^\S\n]+", "", text)
     scales = {**SMALL, "万": 10000, "亿": 100000000}
     if re.fullmatch(r"(?:[0-9]+[十百千万亿]){2,}", text):
@@ -247,7 +317,8 @@ def quantity_units(match):
              match["unit2"] or ("%" if match["percent2"] else "")]
     if match["range"]:
         units = [units[0] or units[1], units[1] or units[0]]
-    return tuple(units[:2 if match["range"] else 1])
+    return tuple(unit.lower() if unit.lower() in EN_UNITS else unit
+                 for unit in units[:2 if match["range"] else 1])
 
 
 def quantity_key(match):
@@ -269,7 +340,7 @@ def quantity_key(match):
         if match[f"sign{index}"] and match[f"inner_sign{index}"]:
             return None
         sign_text = match[f"sign{index}"] or match[f"inner_sign{index}"] or ""
-        sign = -1 if sign_text.startswith(("-", "负")) else 1
+        sign = -1 if sign_text.lower().startswith(("-", "负", "negative")) else 1
         values.append((dimension, value * factor * sign))
     if len(values) == 2 and (values[0][0] != values[1][0] or values[0][1] > values[1][1]):
         return None
@@ -311,6 +382,18 @@ def quantities(text):
         # Keep a hard boundary so quantities cannot merge across a masked date.
         numeric_text[match.start():end] = ";" + " " * (end - match.start() - 1)
     numeric_text = "".join(numeric_text)
+    for match in PORE_OVER.finditer(numeric_text):
+        start, end = match.span(1)
+        numeric_text = numeric_text[:start] + ';' + ' ' * (end - start - 1) + numeric_text[end:]
+    for match in PREDICATE_COUNT.finditer(numeric_text):
+        start, end = match.span()
+        compound = COMPOUND_UNIT.match(normalized, end)
+        end = compound.end() if compound else end
+        result.append((start, Quantity(text[start:end], None, start, end, diagnostic='predicate-count')))
+        numeric_text = numeric_text[:start] + ';' + ' ' * (end - start - 1) + numeric_text[end:]
+    # Mask complete lexical compounds before tokenization, never just their tail.
+    numeric_text = re.sub(rf'(?<![0-9{CN}])(?:{LEXICAL_COUNT.pattern})',
+                          lambda m: ';' + ' ' * (len(m[0]) - 1), numeric_text)
     consumed_end = 0
     for match in TOKEN.finditer(numeric_text):
         if match.start() < consumed_end:

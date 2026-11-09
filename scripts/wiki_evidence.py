@@ -13,6 +13,7 @@ QUOTE_INTRO = re.compile(
     r"(?:(?:原文|原话|原句|直接引文|逐字引用|直接引用)(?:写道|写的是|表述为|说|称|是|为|如下)?\s*[:：]?"
     r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
 DIAGNOSTICS = {
+    "predicate-count": ("否定谓语中的计数需语义核对", "由 Agent 核对找不到所指对象与否定范围；不按不到的数量上界比较，也不凭裸计数自动通过"),
     "year-abbreviation": ("可能是年份缩写，也可能是时长", "核对上下文与世纪；不自动将两位数年补为四位年份"),
     "approximation-difference": ("数值相同，仅普通近似词不同", "建议核对约、左右等表达与断言强度；不视为原文精确支持"),
     "qualifier-difference": ("数值相同但限定词不同", "保留原文的近似、上下界或序数含义，核对后再修改论断"),
@@ -20,6 +21,7 @@ DIAGNOSTICS = {
     "unit-missing": ("候选存在单位省略或补全", "核对原文语境中的单位，不自动接受补全"),
     "not-found": ("未找到可比较的数值候选", "回查原文；派生值列出有来源的分量和公式，校准值补充依据"),
     "quote-not-found": ("直接引文措辞未定位", "核对原句；转述应明确标示，不能当作逐字引文"),
+    "translated-count": ("跨语言计数候选", "核对文件、文件夹等计数对象与归因；通用量词不能自动证明对象相同"),
 }
 
 
@@ -72,6 +74,12 @@ def related_quantity(claim, source):
                           for (_, value), unit in zip(source.key[1:], source.units))
     if claim_values != source_values:
         return None
+    if len(claim.units) == 1:
+        count_units = {'count:folder': {'个', '项'}, 'count:file': {'个', '项'},
+                       'count:resource': {'个', '项', '种'}, 'count:time': {'次', '倍'}}
+        if (claim.units[0] in count_units.get(source.key[1][0], set())
+                or source.units[0] in count_units.get(claim.key[1][0], set())):
+            return "translated-count"
     if ((all(not unit for unit in claim.units) and all(source.units))
             or (all(not unit for unit in source.units) and all(claim.units))):
         return "unit-missing"
@@ -127,7 +135,7 @@ class EvidenceIndex:
             # or ordinal difference. Ambiguous attribution still needs review.
             candidates.sort(key=lambda item: (item[0] == "approximation-difference",
                                                item[0], item[1]["path"], item[1]["start"]))
-            kind = candidates[0][0] if candidates else "not-found"
+            kind = value.diagnostic or (candidates[0][0] if candidates else "not-found")
             selected = [candidate for reason, candidate in candidates if reason == kind]
             details[value.literal] = self.detail(value.literal, kind, text, value.start, value.end, selected)
         for value in quoted_literals(normalized):

@@ -207,7 +207,8 @@ class ProvenanceGraph:
         label = "数值表达建议: " if level == "🔵" else "数值或引文证据待复核: "
         return [issue(level, label + ", ".join(detail["claim"] for detail in details),
                       "候选仅供回查，须核对指标、时间与归因；不自动更正事实", line, True,
-                      category="evidence", details=details, sources=sorted(raw_paths))]
+                      category="evidence", details=details, sources=sorted(raw_paths),
+                      review_dependencies=sorted(self.walk(path)[1]))]
 
     def check(self, path, body, metadata):
         required_roots = tuple(self.schema["paths"][key] + "/" for key in ("summaries", "entities", "concepts", "analyses", "hubs"))
