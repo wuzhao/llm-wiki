@@ -618,6 +618,56 @@ class LintWikiTests(unittest.TestCase):
                 result = self.run_lint(*args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(snapshot(self.kb), before)
+                if '--fix' in args:
+                    self.assertIn('计划自动修复', result.stdout)
+                    self.assertIn('修复后仍需人工介入', result.stdout)
+                    self.assertIn('未写入', result.stdout)
+                    self.assertNotIn('已修复', result.stdout)
+                    preview = result.stdout
+                else:
+                    self.assertNotIn('计划自动修复', result.stdout)
+        fixed = self.run_lint('--fix')
+        self.assertEqual(fixed.returncode, 0, fixed.stderr)
+        import re
+        self.assertEqual(re.search(r'可自动修复 (\d+)', preview)[1],
+                         re.search(r'已修复 (\d+)', fixed.stdout)[1])
+        self.assertIn('type: concept', path.read_text())
+        self.assertNotIn('[[wrong/alpha]]', path.read_text())
+
+    def test_preview_does_not_clear_fail_on_or_claim_unapplied_fixes(self):
+        from wiki_lint_report import build_report
+        from lint_wiki import make_issue
+        findings = [('wiki/concepts/a.md', make_issue('🔴', '缺少 type', '补全 type', is_auto=True))]
+        preview = build_report(findings, 1, dry_run=True, fix_requested=True)
+        self.assertEqual(preview.fixed_count, 0)
+        self.assertEqual(preview.unresolved_levels, {'🔴'})
+        fixed = build_report(findings, 1, write_enabled=True)
+        self.assertEqual(fixed.fixed_count, 1)
+        self.assertEqual(fixed.unresolved_levels, set())
+        self.write_concept('alpha').write_text('# alpha\n')
+        before = snapshot(self.kb)
+        result = self.run_lint('--fix', '--dry-run', '--fail-on', 'error')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(snapshot(self.kb), before)
+
+    def test_overview_gets_content_checks_without_an_index_category(self):
+        from lint_wiki import check_freshness
+        overview = SCHEMA['paths']['overview']
+        self.assertTrue(any(i['problem'] == '页面正文为空'
+                            for i in heuristic_checks(overview, '', {'type': 'overview'}, SCHEMA)))
+        schema = copy.deepcopy(SCHEMA)
+        schema['limits']['max_page_bytes'] = 1
+        self.assertTrue(any(i['problem'] == '页面超过体积阈值'
+                            for i in heuristic_checks(overview, '概览', {'type': 'overview'}, schema)))
+        self.assertTrue(check_freshness(overview, {'stale_after': '2000-01-01T00:00:00Z'}, SCHEMA))
+        self.assertEqual(check_freshness(SCHEMA['paths']['index'], {'stale_after': '2000-01-01T00:00:00Z'}, SCHEMA), [])
+        (self.kb / overview).write_text(page('overview', '概览', '', verified=['bad']))
+        result = self.run_lint('--lint-files', overview)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('页面正文为空', result.stdout)
+        self.assertIn('使用包含 by 和 at 的映射', result.stdout)
+        self.assertNotIn('index 缺少条目: ' + overview, result.stdout)
+        self.assertNotIn('孤儿页面', result.stdout)
 
     def test_second_fix_changes_only_append_only_log(self):
         self.write_concept("alpha", "[[wrong/beta]]")
@@ -659,6 +709,10 @@ class LintWikiTests(unittest.TestCase):
         path = self.kb / "wiki/concepts/alpha.md"
         original = '---\ntype: concept\ntitle: &original ""\ncustom: *original\n---\n# alpha\n'
         path.write_text(original)
+        before = snapshot(self.kb)
+        preview = self.run_lint('--fix', '--dry-run')
+        self.assertIn('修复会破坏 YAML 引用', preview.stdout)
+        self.assertEqual(snapshot(self.kb), before)
         result = self.run_lint("--fix")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("修复会破坏 YAML 引用", result.stdout)

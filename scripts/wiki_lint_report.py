@@ -143,13 +143,14 @@ def unlocated_review_queue(all_issues):
     return report + "\n"
 
 
-def build_report(all_issues, checked, write_enabled=False, dry_run=False):
+def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix_requested=False):
     severity_counts = {"🔴": 0, "🟡": 0, "🔵": 0}
     auto_fixed = []
     manual = {"🔴": [], "🟡": [], "🔵": []}
+    show_repairs = write_enabled or (fix_requested and dry_run)
     for relative, issue in all_issues:
         severity_counts[issue["level"]] += 1
-        if issue["is_auto"] and write_enabled:
+        if issue["is_auto"] and show_repairs:
             auto_fixed.append(format_report_item(relative, issue, "修复操作"))
         else:
             manual[issue["level"]].append((issue.get("category", "other"), format_report_item(relative, issue)))
@@ -160,7 +161,8 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
     else:
         suffix = " (预览模式)" if dry_run else ""
         report = f"## Lint 报告{suffix}\n\n"
-        report += f"总页面 {checked} / 发现问题 {len(all_issues)}\n\n"
+        report += f"总页面 {checked} / 发现问题 {len(all_issues)}"
+        report += f" / 可自动修复 {len(auto_fixed)}（未写入）\n\n" if show_repairs else "\n\n"
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
     report += f"🔵 轻微: {severity_counts['🔵']} 个（表达或架构建议）\n\n"
@@ -168,11 +170,13 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
     report += unlocated_review_queue(all_issues)
     report += review_groups(all_issues)
 
-    if all_issues and write_enabled:
-        report += f"### ✅ 自动修复 ({len(auto_fixed)})\n\n"
+    if all_issues and show_repairs:
+        title = "✅ 自动修复" if write_enabled else "计划自动修复"
+        report += f"### {title} ({len(auto_fixed)})\n\n"
         report += "\n".join(auto_fixed) + "\n\n" if auto_fixed else "无自动修复操作。\n\n"
         manual_count = sum(len(items) for items in manual.values())
-        report += f"### ⚠️ 需要人工介入 ({manual_count})\n\n"
+        title = "需要人工介入" if write_enabled else "修复后仍需人工介入"
+        report += f"### ⚠️ {title} ({manual_count})\n\n"
         for level in ("🔴", "🟡", "🔵"):
             if manual[level]:
                 report += format_categories(manual[level], level)
@@ -195,4 +199,6 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False):
             report += '\n</details>\n'
 
     report += candidate_groups(all_issues)
-    return LintReport(report, severity_counts, len(auto_fixed), {level for level, items in manual.items() if items})
+    unresolved = ({level for level, items in manual.items() if items} if write_enabled
+                  else {issue["level"] for _, issue in all_issues})
+    return LintReport(report, severity_counts, len(auto_fixed) if write_enabled else 0, unresolved)

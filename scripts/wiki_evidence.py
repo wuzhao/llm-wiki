@@ -9,6 +9,10 @@ from wiki_numbers import UNITS, WIDTH, quantities
 
 CONTEXT_RADIUS = 45
 MAX_CANDIDATES = 3
+TRANSLATED_COUNT_UNITS = {
+    'count:folder': {'个', '项'}, 'count:file': {'个', '项'},
+    'count:resource': {'个', '项', '种'}, 'count:time': {'次', '倍'},
+}
 QUOTE_INTRO = re.compile(
     r"(?:(?:原文|原话|原句|直接引文|逐字引用|直接引用)(?:写道|写的是|表述为|说|称|是|为|如下)?\s*[:：]?"
     r"|(?:写道|说道|说|表示|指出|称)\s*[:：]|(?:verbatim|quote)\s*:)\s*$", re.I)
@@ -75,10 +79,8 @@ def related_quantity(claim, source):
     if claim_values != source_values:
         return None
     if len(claim.units) == 1:
-        count_units = {'count:folder': {'个', '项'}, 'count:file': {'个', '项'},
-                       'count:resource': {'个', '项', '种'}, 'count:time': {'次', '倍'}}
-        if (claim.units[0] in count_units.get(source.key[1][0], set())
-                or source.units[0] in count_units.get(claim.key[1][0], set())):
+        if (claim.units[0] in TRANSLATED_COUNT_UNITS.get(source.key[1][0], set())
+                or source.units[0] in TRANSLATED_COUNT_UNITS.get(claim.key[1][0], set())):
             return "translated-count"
     if ((all(not unit for unit in claim.units) and all(source.units))
             or (all(not unit for unit in source.units) and all(claim.units))):

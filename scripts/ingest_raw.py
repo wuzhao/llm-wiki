@@ -19,7 +19,7 @@ except ImportError as exc:
         f"{Path(__file__).resolve().parents[1] / 'requirements.txt'} 中的依赖。"
     ) from exc
 
-from wiki_config import SchemaError, infer_document_type, load_schema, resolve_within, validate_structure
+from wiki_config import SchemaError, infer_document_type, load_schema, resolve_within, skill_version, validate_structure
 from wiki_io import checked_destination, create_unique_bytes, create_unique_text
 from html_markdown import ArticleTextParser
 from wiki_metadata import body_sha256, content_sha256
@@ -34,7 +34,7 @@ def clean_filename(title):
 def fetch_url_content(url, limits, capture=None):
     if urllib.parse.urlsplit(url).scheme not in {"http", "https", "data"}:
         raise ValueError("URL 仅支持 http、https 或 data；本地文件请使用 --file")
-    req = urllib.request.Request(url, headers={"User-Agent": "LLM-Wiki/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": f"LLM-Wiki/{skill_version()}"})
     with urllib.request.urlopen(req, timeout=limits["url_timeout_seconds"]) as response:
         media_type = response.headers.get_content_type()
         if not (media_type.startswith("text/") or media_type == "application/xhtml+xml"):

@@ -1,6 +1,6 @@
 # 维护验证历史
 
-本文件保留以往版本的验证记录，不代表当前版本已通过；当前验收入口见 [Golden Sample](golden-sample.md)。
+本文件保留以往版本的验证记录，不代表当前版本已通过；当前验收入口见 [Golden Sample](../references/golden-sample.md)。
 
 ## 维护验证记录：2026-09-27
 
@@ -87,7 +87,7 @@
 
 - .github：`.github/workflows/tests.yml`。
 - 根目录：`AGENTS.md`、`README.en.md`、`README.md`、`SKILL.md`。
-- references：`references/README.md`、`references/golden-sample.md`、`references/ingest-policy.md`、`references/init-files.md`、`references/lint-policy.md`、`references/maintenance-history.md`、`references/okf-frontmatter.md`、`references/scalability-policy.md`、`references/schema.md`、`references/synthesis-policy.md`。
+- references：`references/README.md`、`references/golden-sample.md`、`references/ingest-policy.md`、`references/init-files.md`、`references/lint-policy.md`、`docs/maintenance-history.md`、`references/okf-frontmatter.md`、`references/scalability-policy.md`、`references/schema.md`、`references/synthesis-policy.md`。
 - scripts：`scripts/check_project.py`、`scripts/ingest_attachment.py`、`scripts/ingest_raw.py`、`scripts/init_wiki.py`、`scripts/lint_wiki.py`、`scripts/markdown_links.py`、`scripts/synthesis_wiki.py`、`scripts/wiki_config.py`、`scripts/wiki_io.py`、`scripts/wiki_links.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`scripts/wiki_scan.py`。
 - templates：`templates/AGENTS-template.md`、`templates/archive-template.md`、`templates/concept-template.md`、`templates/entity-template.md`、`templates/hub-template.md`、`templates/log-template.md`、`templates/overview-template.md`、`templates/source-template.md`。
 - tests：`tests/kb_fixture.py`、`tests/test_lint_wiki.py`、`tests/test_project_checks.py`、`tests/test_provenance_search.py`、`tests/test_schema.py`、`tests/test_synthesis.py`、`tests/test_wiki_io.py`、`tests/test_workflow_tools.py`。
@@ -116,7 +116,7 @@
 - 同一份 144 页快照只读对照中，告警从 291 条降至 270 条；按页面、段落和问题类型比较消除 21 条，无新增告警位置。原知识库 Markdown 内容指纹保持一致。
 - 使用项目 `.venv` 执行全量 unittest，170 项通过；项目一致性检查及 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
-- 修改文件：`SKILL.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_numbers.py`、`tests/test_numeric_evidence.py`、`tests/test_provenance_search.py`。
+- 修改文件：`SKILL.md`、`references/provenance-policy.md`、`docs/maintenance-history.md`、`scripts/wiki_numbers.py`、`tests/test_numeric_evidence.py`、`tests/test_provenance_search.py`。
 
 ### 同日证据诊断与表格引用发布验证
 
@@ -127,7 +127,7 @@
 - 同一份 144 页快照只读对照中，告警仍为 270 条：161 条证据待复核、45 条缺脚注及 64 条其他问题。除标题更名与定位细化外，按页面与问题内容比较无增减；原知识库 Markdown 内容指纹保持一致。
 - 使用项目 `.venv` 执行全量 unittest，183 项通过；项目一致性检查与 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
-- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_provenance_search.py`。
+- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`docs/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_provenance_search.py`。
 
 ### 同日口语数值与告警分级发布验证
 
@@ -139,7 +139,7 @@
 - 本地快照含 44 条原始文件不可访问与 2 条未解决冲突，未出现日志超限，与用户所贴报告存在差异；缺失的空 analyses 目录仅在临时测试副本补齐。
 - 使用项目 `.venv` 执行全量 unittest，189 项通过；项目一致性检查及 `git diff --check` 通过。
 - Golden Sample 临时知识库完成三类摄入、单篇建页、跨篇候选补足、同义复用、冲突保留、只读分页查询与探索、来源更新及归档保护、显式全库整理；重复输入无写入，安全修复仅追加日志。本地验证无失败项，远端测试矩阵结果需在推送后确认。
-- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/synthesis-policy.md`、`references/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`tests/test_evidence_diagnostics.py`、`tests/test_lint_wiki.py`。
+- 修改文件：`SKILL.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/synthesis-policy.md`、`docs/maintenance-history.md`、`scripts/lint_wiki.py`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_numbers.py`、`tests/test_evidence_diagnostics.py`、`tests/test_lint_wiki.py`。
 
 ## 维护验证记录：2026-10-31
 
@@ -148,7 +148,7 @@
 - 同一份 `phanwiki/wiki` 快照的 97 页只读对照中，告警从 228 条变为 216 条：移除 31 条摘要缺脚注提示，补出 13 条证据待复核及 6 条聚合页来源或脚注问题。原有 161 条证据告警全部保留，严重问题仍为 0；403 个知识文件的内容指纹不变。经用户授权仅补建缺失的空 analyses 目录。
 - 使用项目 `.venv` 执行全量 unittest，202 项通过，包含新增的引用粒度回归 13 项；项目一致性检查与 `git diff --check` 通过。
 - Golden Sample 临时知识库完成初始化、文件与本地 HTTP URL 及粘贴文本摄入、单篇充分建页、仅提及暂缓、跨篇补足、同义复用、冲突保留与提炼检查点；默认 lint、重复输入和查询探索保持只读，安全修复仅追加日志。场景 16 的来源结构与引用边界由新增回归覆盖，场景 11 至场景 15 的状态、续扫、周期与版本由全量自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
-- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_provenance.py`、`templates/AGENTS-template.md`、`templates/hub-template.md`、`templates/source-template.md`、`tests/test_citation_scope.py`。
+- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`docs/maintenance-history.md`、`scripts/wiki_provenance.py`、`templates/AGENTS-template.md`、`templates/hub-template.md`、`templates/source-template.md`、`tests/test_citation_scope.py`。
 
 ### 同日证据候选分级与复核队列发布验证
 
@@ -158,7 +158,7 @@
 - 同一份 `phanwiki/wiki` 快照的 97 页只读对照中，216 条提示总数不变，黄色从 215 条降为 205 条，蓝色从 1 条变为 11 条；23 个普通近似主张改为建议。全部 266 个证据主张位置保留，179 个未定位主张汇总到 46 页队列，27 个单位差异主张继续待复核；403 个知识文件的内容指纹不变。
 - 使用项目 `.venv` 执行全量 unittest，211 项通过，包含新增分级、混合论断、来源闭环、复核队列及退出码回归 9 项；项目一致性检查与 `git diff --check` 通过。
 - Golden Sample 临时知识库完成初始化、三类摄入、单篇充分建页、仅提及暂缓、跨篇补足、同义复用、冲突保留与提炼检查点；默认 lint、重复输入及查询探索保持只读，安全修复仅追加日志。场景 17 由新增自动化回归覆盖，场景 11 至场景 15 结合全量自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
-- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/maintenance-history.md`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_evidence_priority.py`。
+- 修改文件：`SKILL.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`docs/maintenance-history.md`、`scripts/wiki_evidence.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`tests/test_evidence_diagnostics.py`、`tests/test_evidence_priority.py`。
 
 ## 维护验证记录：2026-11-09
 
@@ -177,3 +177,12 @@
 - 同一知识库默认全库范围的 188 页只读对照中，总告警从 356 条变为 345 条，黄色从 335 条变为 326 条，蓝色从 21 条变为 19 条；未匹配主张从 452 个变为 442 个，限定词不同保持 12 个，跨语言计数候选保持 14 个。知识库 513 个文件的内容指纹未变。
 - 新增一处泛指「衡量一天」的机器候选，经 Agent 对照原文 their days 核对为日常表达，无需用户决策；原始报告保留。两处十小时因新增天单位而转为单位差异候选，告警数量不变，不认定计数语境相同。
 - 使用项目 `.venv` 执行全量 unittest，229 项通过；项目一致性检查及 `git diff --check` 通过。Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10，状态与版本场景结合完整自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
+
+## 维护验证记录：2026-11-10
+
+- 版本从 `0.2.10` 升至 `0.2.11`，模板与 HTTP User-Agent 统一读取技能版本。
+- 修复预览在内存中生成实际修复计划并展示操作与剩余人工项，不写页面或日志，不将计划项计为已修复；预览的退出码保留未解决项。YAML 引用与扫描覆盖保护继续生效。
+- overview 纳入搜索、空正文、体积、冲突与生命周期检查，仍不参与分类索引、知识入链和孤儿页统计；verified 提示及 CLI 示例与规范对齐。
+- 数词词法例外与跨语言计数采用命名常量表，来源策略按规则类别组织；对 phanwiki 的 258 份 Markdown 比较整理前后的数量抽取结果，无变化，513 个知识库文件内容指纹不变。
+- 完整维护历史移至 docs；新增中文正文标点、分隔线、表格加粗和明确数值列对齐检查，跳过代码、注释、frontmatter 与链接目标。中英文说明补充使用 Git 归档分发已提交版本，保留本地验证材料。
+- 使用项目 `.venv` 执行全量 unittest，233 项通过；项目一致性检查及 `git diff --check` 通过。Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10，状态、版本及场景 19 的预览与概览边界结合完整自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。

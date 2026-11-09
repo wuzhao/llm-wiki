@@ -109,12 +109,15 @@ DATE_TOKEN = re.compile(
     rf"|[0-9{DATE_DIGITS}]{{1,4}}{SPACE}[年月日号]?|今|目前|现在))?"
     rf"(?:{SPACE}(?P<suffix>{SUFFIX}|之前|之后|以前|以后|起))?"
 )
-LEXICAL_COUNT = re.compile(
-    r"一次性|二次(?:分配|引用|创作|转载|开发|传播|函数|方程)"
-    r"|[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)"
-    r"|成(?:百上千|千上万)(?:个|条|项|种|次|人|位|家)?"
-    r"|七上八下|十之八九"
-)
+# Named lexical rules keep exclusions reviewable without changing tokenization.
+LEXICAL_COUNT_RULES = {
+    "single_use": r"一次性",
+    "secondary": r"二次(?:分配|引用|创作|转载|开发|传播|函数|方程)",
+    "arity": r"[二三]元(?:组|关系|结构|架构|对立|区分|逻辑|论|角色|分工|协作)",
+    "vague_magnitude": r"成(?:百上千|千上万)(?:个|条|项|种|次|人|位|家)?",
+    "idioms": r"七上八下|十之八九",
+}
+LEXICAL_COUNT = re.compile("|".join(LEXICAL_COUNT_RULES.values()))
 COMPOUND_UNIT = re.compile(r"(?:[/·][A-Za-z0-9\u4e00-\u9fff/·²³^+\-]+|[²³])")
 # A sign can be spoken as 负的; lexical 自负/担负/背负/胜负 are not signs.
 SIGN = rf"(?:[+\-]|正(?:{SPACE}的)?|(?<![自担背胜])负(?:{SPACE}的)?|(?i:\bnegative\b|\bpositive\b))"

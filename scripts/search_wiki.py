@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from wiki_config import SchemaError, index_section_for, load_schema, validate_structure
+from wiki_config import SchemaError, is_knowledge_page, load_schema, validate_structure
 from wiki_sources import load_documents
 
 
@@ -21,7 +21,7 @@ def search_documents(documents, terms, schema, document_type=None, tag=None, dom
             expanded.update(names)
     results = []
     for path, document in documents.items():
-        if not index_section_for(path, schema):
+        if not is_knowledge_page(path, schema):
             continue
         metadata = document["metadata"]
         if document_type and metadata.get("type") != document_type:

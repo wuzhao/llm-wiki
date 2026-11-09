@@ -39,6 +39,8 @@ the installation path, verification results, and how to load it later.
 
 `skills/llm-wiki/` is a location for explicit loading; automatic discovery depends on the agent. Existing installations elsewhere can also be selected explicitly.
 
+When distributing from a local development checkout, use `git archive HEAD --output=/path/to/llm-wiki.tar` to export the committed version, then extract it into a new installation directory. The archive includes tracked files and leaves out ignored `scratch/` reports, `.venv/`, caches, and `.env`, as well as uncommitted changes. Keep verification reports in the development checkout and prepare dependencies again after installation.
+
 ## Build your first wiki
 
 These examples use this workspace's skill installation and `my-wiki/`. Substitute your own paths. In a new session, identify the skill and knowledge base locations and use the installation's loading instruction if needed.

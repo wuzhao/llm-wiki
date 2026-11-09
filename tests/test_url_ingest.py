@@ -78,10 +78,12 @@ class URLIngestTests(unittest.TestCase):
         response = io.BytesIO(b"12345678")
         response.headers = Message()
         response.headers["Content-Type"] = "text/plain"
-        with patch("ingest_raw.urllib.request.urlopen", return_value=response) as opener:
+        with patch("ingest_raw.skill_version", return_value="9.8.7"), \
+                patch("ingest_raw.urllib.request.urlopen", return_value=response) as opener:
             with self.assertRaisesRegex(ValueError, "max_source_bytes"):
                 fetch_url_content("https://example.com", limits)
             self.assertEqual(opener.call_args.kwargs["timeout"], 2)
+            self.assertEqual(opener.call_args.args[0].get_header('User-agent'), 'LLM-Wiki/9.8.7')
 
     def test_decode_errors_are_not_silently_ignored(self):
         response = io.BytesIO(b"\xff\xfeinvalid")

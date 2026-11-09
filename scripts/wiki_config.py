@@ -255,6 +255,12 @@ def infer_document_type(relative_path, schema):
     return None
 
 
+def is_knowledge_page(relative_path, schema):
+    """Content checks include overview without giving it an index category."""
+    rel = Path(relative_path).as_posix().lstrip("./")
+    return rel == schema["paths"]["overview"] or index_section_for(rel, schema) is not None
+
+
 def index_section_for(relative_path, schema):
     rel = Path(relative_path).as_posix().lstrip("./")
     for prefix, section in sorted(schema["index_sections"].items(), key=lambda item: -len(item[0])):

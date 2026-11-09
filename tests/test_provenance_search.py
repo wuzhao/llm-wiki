@@ -208,6 +208,20 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertNotIn('来源依赖需要复核', result.stdout)
         self.assertNotIn('来源链未到达 raw', result.stdout)
 
+    def test_search_includes_overview_but_excludes_index_and_logs(self):
+        (self.kb / 'wiki/overview.md').write_text(page('overview', '全库概览', 'overviewneedle', aliases=['概览别名']))
+        with (self.kb / 'wiki/index.md').open('a') as stream:
+            stream.write('\noverviewneedle\n')
+        (self.kb / 'wiki/logs/200001.md').write_text(page('operation-log', '日志', 'overviewneedle'))
+        before = snapshot(self.kb)
+        for query in ('overviewneedle', '概览别名'):
+            result = self.command('search_wiki.py', query, '--type', 'overview')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([item['path'] for item in json.loads(result.stdout)['results']], ['wiki/overview.md'])
+        unfiltered = json.loads(self.command('search_wiki.py', 'overviewneedle').stdout)
+        self.assertEqual([item['path'] for item in unfiltered['results']], ['wiki/overview.md'])
+        self.assertEqual(snapshot(self.kb), before)
+
     def test_search_finds_body_details_and_aliases_then_paginates(self):
         self.write('wiki/concepts/rag.md', '方法定义', aliases=['RAG', '检索增强生成'])
         self.write('wiki/entities/a.md', '这里提到了检索增强生成的细节。', domain='retrieval', tags=['search'])

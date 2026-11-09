@@ -23,6 +23,7 @@ from wiki_config import (
     SchemaError,
     TemplateError,
     index_section_for,
+    is_knowledge_page,
     infer_document_type,
     is_asset_path,
     render_markdown_template,
@@ -457,7 +458,7 @@ def verification_dates(metadata):
                 elif value is not None:
                     issues.append(make_issue("🔵", "verified[].at 不是有效的 ISO 8601 时间", "修正 frontmatter", line=1))
             else:
-                issues.append(make_issue("🔵", "verified 条目不是映射", "使用包含 at 和 source 的映射", line=1))
+                issues.append(make_issue("🔵", "verified 条目不是映射", "使用包含 by 和 at 的映射", line=1))
     else:
         issues.append(make_issue("🔵", "verified 不是数组或映射", "修正 frontmatter", line=1))
     for key in ("verified_at", "last_reviewed"):
@@ -471,7 +472,7 @@ def verification_dates(metadata):
 
 
 def check_freshness(relative_path, metadata, schema, now=None):
-    if not index_section_for(relative_path, schema):
+    if not is_knowledge_page(relative_path, schema):
         return []
     if str(metadata.get("status", "stable")).casefold() == "deprecated":
         return []
@@ -525,10 +526,10 @@ def heuristic_checks(relative_path, body, metadata, schema):
             issues.append(make_issue("🔵", "日志超过体积阈值", "分批读取该日志，后续记录按月追加；换月不消除历史超限，不移动或截断旧记录"))
         return issues
 
-    if index_section_for(relative_path, schema) and not body.strip():
+    if is_knowledge_page(relative_path, schema) and not body.strip():
         issues.append(make_issue("🟡", "页面正文为空", "补充实际知识内容，完整的短定义无需扩写"))
 
-    if index_section_for(relative_path, schema):
+    if is_knowledge_page(relative_path, schema):
         line_count = len(body.splitlines())
         byte_count = len(body.encode("utf-8"))
         h2_count = len(re.findall(r"^##\s+", body, re.MULTILINE))
@@ -636,7 +637,7 @@ def prepare_log(kb_dir, schema):
     return log_path, template
 
 
-def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_relative, write_enabled, strict_sources, all_issues):
+def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_relative, repair_enabled, strict_sources, all_issues):
     documents = snapshot.documents
     text_cache, read_content = snapshot.text, snapshot.read
     scan_errors = target_index["scan_errors"]
@@ -660,7 +661,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
         original = content
         _, _, _, original_error = split_frontmatter(content)
         is_log = relative.startswith(schema["paths"]["logs"] + "/")
-        page_writable = write_enabled and not is_log and original_error in ("", "缺少 YAML frontmatter")
+        page_writable = repair_enabled and not is_log and original_error in ("", "缺少 YAML frontmatter")
         content, frontmatter_issues, metadata, body = check_and_fix_frontmatter(
             filepath,
             content,
@@ -691,7 +692,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
         issues = frontmatter_issues + link_issues
         if not page_writable:
             for issue in issues:
-                issue["is_auto"] = False if write_enabled else issue["is_auto"]
+                issue["is_auto"] = False if repair_enabled else issue["is_auto"]
         issues += check_source_file_integrity(relative, metadata, kb_dir, schema, latest, strict_sources)
         issues += check_raw_snapshot(relative, metadata, body, kb_dir, schema)
         issues += check_sources(relative, metadata, target_index)
@@ -704,7 +705,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
             if (isinstance(state, dict) and not state_errors
                     and state["reviewed_sha256"] != review_fingerprint({"metadata": metadata, "body": body})):
                 issues.append(make_issue("🟡", "摘要提炼记录与当前内容不一致", "重新检查相关主题后记录工具返回的指纹", line=1))
-        conflict_issues = check_conflicts(mask_non_prose(body)) if index_section_for(relative, schema) else []
+        conflict_issues = check_conflicts(mask_non_prose(body)) if is_knowledge_page(relative, schema) else []
         body_offset = content.count("\n", 0, len(content) - len(body))
         for issue in conflict_issues:
             if issue["line"]:
@@ -772,7 +773,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
                 issue["is_auto"] = False
             if index_relative not in {p.relative_to(kb_dir).as_posix() for p in markdown_files}:
                 all_issues.append((index_relative, make_issue("🔴", index_error, "保留 index 原文，请人工修复", line=1)))
-        if write_enabled and not index_error and new_index_content != index_content:
+        if repair_enabled and not index_error and new_index_content != index_content:
             planned_writes[index_relative] = new_index_content
 
     if index_content is not None and graph_complete:
@@ -791,7 +792,7 @@ def main():
     scope.add_argument("--lint-files", nargs="+", help="Markdown files to lint, relative to kb_dir; always includes index")
     parser.add_argument("--index-file", help="Index file path, relative to kb_dir")
     parser.add_argument("--fix", action="store_true", help="Enable safe deterministic auto-fixes")
-    parser.add_argument("--dry-run", action="store_true", help="Preview fixes without writing")
+    parser.add_argument("--dry-run", action="store_true", help="Report without writing; combine with --fix to preview repairs")
     parser.add_argument("--strict-sources", action="store_true", help="Treat inaccessible external source files as errors")
     parser.add_argument("--report-file", help="Path to save the markdown report")
     parser.add_argument("--review-file", help="Read explicit semantic review records from JSON; never changes severity")
@@ -843,8 +844,9 @@ def main():
                 or not relative.startswith((schema["paths"]["wiki"] + "/", schema["paths"]["raw"] + "/"))):
             parser.error(f"lint 文件必须是 raw 或 wiki 内已存在的 Markdown 文件，附件除外: {relative}")
 
-    write_enabled = args.fix and not args.dry_run
-    if write_enabled:
+    fix_requested = args.fix
+    write_enabled = fix_requested and not args.dry_run
+    if fix_requested:
         try:
             prepare_log(kb_dir, schema)
         except (SchemaError, TemplateError, OSError) as exc:
@@ -904,11 +906,13 @@ def main():
                 "后续按 topic 或目录分批执行深度语义检查",
             ),
         ))
+    repair_enabled = fix_requested and not scan_errors
     plan, all_issues = plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot,
-                                    index_relative, write_enabled, args.strict_sources, all_issues)
+                                    index_relative, repair_enabled, args.strict_sources, all_issues)
 
     review_data, stale_reviews = annotate_reviews(all_issues, snapshot, reviews, checker_fingerprint())
-    result = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run)
+    result = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run,
+                          fix_requested=repair_enabled)
     report = result.text
     if stale_reviews:
         report += f"\n复核记录提示：{stale_reviews} 条已复核记录未复用（内容、来源、规则、证据片段或本次范围不匹配），当前候选仍待复核。\n"

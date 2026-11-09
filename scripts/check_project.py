@@ -7,9 +7,55 @@ import urllib.parse
 from pathlib import Path
 
 from lint_wiki import heading_keys
-from markdown_links import mask_non_prose, standard_link_spans, unescape_target
+from markdown_links import mask_link_metadata, mask_non_prose, standard_link_spans, unescape_target
 from wiki_config import MARKDOWN_TEMPLATE_RE, SchemaError, infer_document_type, load_schema
 from wiki_metadata import split_frontmatter
+
+
+def markdown_style_errors(text):
+    """Check unambiguous prose rules, excluding YAML, code and comments."""
+    prose = mask_link_metadata(mask_non_prose(text))
+    lines, original = prose.splitlines(), text.splitlines()
+    errors = []
+    for index, line in enumerate(lines):
+        # Chinese punctuation rules do not rewrite English documentation.
+        if re.search(r"[\u4e00-\u9fff]", line):
+            if re.search(r"[“”\u2026\u2014\u2500]|。{2,}|(?<!-)--(?!-)", line):
+                errors.append(f"第 {index + 1} 行: 中文正文含禁用标点")
+        if line.strip() == '---':
+            if (index and original[index - 1].strip()) or (index + 1 < len(original) and original[index + 1].strip()):
+                errors.append(f"第 {index + 1} 行: 分隔线前后必须有空行")
+
+    def cells(line):
+        if '|' not in line:
+            return []
+        parts = re.split(r'(?<!\\)\|', line.strip())
+        if not parts[0]:
+            parts.pop(0)
+        if parts and not parts[-1]:
+            parts.pop()
+        return [part.strip() for part in parts]
+
+    numeric = re.compile(r'[¥￥$€£]?[+-]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:%|‰|元|万元|亿元|KB|MB|GB)?')
+    for index in range(1, len(lines)):
+        alignment = cells(lines[index])
+        header = cells(lines[index - 1])
+        if not alignment or len(header) != len(alignment) or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in alignment):
+            continue
+        rows = [(index - 1, header)]
+        for row_index in range(index + 1, len(lines)):
+            row = cells(lines[row_index])
+            if len(row) != len(header):
+                break
+            rows.append((row_index, row))
+        for row_index, row in rows:
+            if any(re.search(r'(?<!\\)(\*\*|__).+?\1', cell) for cell in row):
+                errors.append(f"第 {row_index + 1} 行: 表格单元格不能加粗")
+        for column, align in enumerate(alignment):
+            values = [row[column] for _, row in rows[1:] if row[column] not in ('', '-', '暂无')]
+            if values and all(numeric.fullmatch(value) for value in values) and not re.fullmatch(r'-{3,}:', align):
+                errors.append(f"第 {index + 1} 行: 表格第 {column + 1} 列为数值列，须右对齐")
+    return errors
 
 
 def check_project(root):
@@ -59,12 +105,14 @@ def check_project(root):
             if "llm-wiki/{{SKILL_VERSION}}" not in match["body"]:
                 errors.append(f"{path.name}: generated.by 必须引用统一版本占位符")
 
-    documents = sorted([*root.glob("*.md"), *root.glob("references/**/*.md"), *root.glob("templates/**/*.md")])
+    documents = sorted([*root.glob("*.md"), *root.glob("references/**/*.md"),
+                        *root.glob("templates/**/*.md"), *root.glob("docs/**/*.md")])
     for path in documents:
         text = path.read_bytes().decode("utf-8")
         relative = path.relative_to(root)
         if not text.endswith("\n") or text.endswith("\n\n"):
             errors.append(f"{relative}: Markdown 必须且仅以一个换行符结尾")
+        errors.extend(f"{relative}: {error}" for error in markdown_style_errors(text))
         for start, end in standard_link_spans(mask_non_prose(text)):
             target = urllib.parse.urlsplit(unescape_target(text[start:end]))
             if target.scheme or target.netloc:
@@ -77,7 +125,7 @@ def check_project(root):
                 if urllib.parse.unquote(target.fragment).casefold() not in exact | slugs:
                     errors.append(f"{relative}: 文档锚点不存在 {text[start:end]}")
         # Also validate concrete skill resource paths written as inline code.
-        for match in re.finditer(r"`((?:references|templates|scripts)/[\w./-]+\.(?:md|json|py))`", text):
+        for match in re.finditer(r"`((?:references|templates|scripts|docs)/[\w./-]+\.(?:md|json|py))`", text):
             if not (root / match[1]).exists():
                 errors.append(f"{relative}: 资源路径不存在 {match[1]}")
 
