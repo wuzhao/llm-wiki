@@ -29,6 +29,8 @@ class ProvenanceSearchTests(unittest.TestCase):
         return path
 
     def command(self, script, *args):
+        if script == 'lint_wiki.py':
+            args = ('--details', *args)
         return subprocess.run([sys.executable, str(ROOT / 'scripts' / script), str(self.kb), *args], capture_output=True, text=True)
 
     def test_url_identity_prefers_resource_and_only_falls_back_when_missing(self):
@@ -46,6 +48,13 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertEqual(source_identity({
             'resource': 'original.md', 'source_url': url, 'source_id': 'text:original',
         }, self.kb), 'text:original')
+
+    def test_saved_identity_survives_location_changes(self):
+        for metadata in ({'source_file_path': '/new/path/input.md'},
+                         {'resource': 'https://new.example/article'},
+                         {'source_file_path': 'raw/assets/input.md'}):
+            with self.subTest(metadata=metadata):
+                self.assertEqual(source_identity({**metadata, 'source_id': 'stable-id'}, self.kb), 'stable-id')
 
     def test_missing_sources_are_reported_even_when_links_are_valid(self):
         self.write('wiki/concepts/alpha.md', '[[concepts/beta]]')

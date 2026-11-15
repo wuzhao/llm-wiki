@@ -22,6 +22,28 @@ class CitationScopeTests(unittest.TestCase):
     def citations(self, findings):
         return [finding for finding in findings if finding.get('category') == 'citation']
 
+    def test_list_items_do_not_borrow_the_next_citation_with_or_without_blank_lines(self):
+        for marker in ('-', '*', '+', '1.', '1)', '  -'):
+            for gap in ('\n', '\n\n'):
+                with self.subTest(marker=marker, gap=gap):
+                    body = f'{marker} 实验甲成功率30%。{gap}{marker} 实验乙成功率30%。[^a]\n\n[^a]: 乙来源'
+                    findings = self.check(body, path='wiki/concepts/a.md', raw='实验乙成功率30%。')
+                    self.assertEqual(len(self.citations(findings)), 1)
+                    self.assertEqual(self.citations(findings)[0]['line'], 1)
+                    self.assertFalse(self.evidence(findings))
+
+    def test_list_continuations_share_citation_but_nested_items_do_not(self):
+        body = '- 实验甲成功率30%，\n  延迟42ms。[^a]\n\n[^a]: 来源'
+        self.assertEqual(self.check(body, path='wiki/concepts/a.md', raw='30%，42ms'), [])
+        body = '- 实验甲成功率30%。\n  - 子实验成功率30%。[^a]\n\n[^a]: 来源'
+        self.assertEqual(len(self.citations(self.check(body, path='wiki/concepts/a.md', raw='30%'))), 1)
+
+    def test_table_rows_without_shared_caption_do_not_borrow_citations(self):
+        body = '| 实验 | 成功率 |\n| --- | --- |\n| 甲 | 30% |\n| 乙 | 30%[^a] |\n\n[^a]: 来源'
+        findings = self.check(body, path='wiki/concepts/a.md', raw='乙30%')
+        self.assertEqual(len(self.citations(findings)), 1)
+        self.assertEqual(self.citations(findings)[0]['line'], 3)
+
     def evidence(self, findings):
         return [finding for finding in findings if finding.get('category') == 'evidence']
 
@@ -118,7 +140,7 @@ class CitationScopeTests(unittest.TestCase):
                 '## 摘要\n\n延迟42ms。\n\n## 关键要点\n\n延迟99ms。',
                 sources=[{'resource': '../../raw/a.md'}]))
             before = snapshot(kb)
-            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb),
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--details',
                 '--lint-files', 'wiki/summaries/a.md', '--fail-on', 'warning'], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertNotIn('缺少逐条来源', result.stdout)

@@ -157,7 +157,7 @@ class EvidencePriorityTests(unittest.TestCase):
                              .replace('素材: 0', '素材: 1'))
             before = snapshot(kb)
             for threshold, expected in [('warning', 0), ('any', 1)]:
-                result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb),
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--details',
                     '--lint-files', 'wiki/summaries/a.md', '--fail-on', threshold], capture_output=True, text=True)
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 self.assertIn('数值相同，仅普通近似词不同', result.stdout)
@@ -166,7 +166,7 @@ class EvidencePriorityTests(unittest.TestCase):
                 self.assertEqual(snapshot(kb), before)
             summary.write_text(summary.read_text().replace('约50%', '超过50%'))
             before = snapshot(kb)
-            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb),
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--details',
                 '--lint-files', 'wiki/summaries/a.md', '--fail-on', 'warning'], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertEqual(snapshot(kb), before)

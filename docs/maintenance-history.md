@@ -186,3 +186,21 @@
 - 数词词法例外与跨语言计数采用命名常量表，来源策略按规则类别组织；对 phanwiki 的 258 份 Markdown 比较整理前后的数量抽取结果，无变化，513 个知识库文件内容指纹不变。
 - 完整维护历史移至 docs；新增中文正文标点、分隔线、表格加粗和明确数值列对齐检查，跳过代码、注释、frontmatter 与链接目标。中英文说明补充使用 Git 归档分发已提交版本，保留本地验证材料。
 - 使用项目 `.venv` 执行全量 unittest，233 项通过；项目一致性检查及 `git diff --check` 通过。Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10，状态、版本及场景 19 的预览与概览边界结合完整自动化回归核对。本地验证无未解决失败项，远端测试矩阵结果需在推送后确认。
+
+## 维护验证记录：2026-11-15
+
+- 本次仅优化 llm-wiki 项目，未修改 phanwiki；发布版本从 `0.2.11` 更新为 `0.2.12`。
+- 引用范围按段落、标题、列表项和表格行分开；后一项的脚注不再覆盖前一项，同项连续换行和显式整表共享来源继续支持。
+- 已存来源身份优先于当前位置；新摄入的库内文件保存相对位置，外部文件或 URL 迁移可明确接续旧身份。旧 raw 保留，位置歧义停止写入，重复输入继续复用。
+- 链接解析规则集中于 OKF profile，schema 文档与 lint 策略引用统一定义，修正根路径语义与同名候选有效性的矛盾表述。
+- lint 默认输出摘要，新增完整详情与页面、类别筛选；完整导出不受显示筛选影响，修复范围和退出码保持原含义。问题 id 贯穿视图，计划修复与已修复分别标识。
+- 复核工作流补齐导出、填写、加载和失效处理步骤。报告分别计数原始告警、已复核主张和待复核主张，部分复核不视为整条完成；规则指纹补充来源、链接、元数据及 schema 依赖。
+- 使用项目 `.venv` 执行完整 unittest，244 项通过，比原有基线增加 11 项。项目一致性检查与 `git diff --check` 通过。原有详情测试显式使用 `--details`，新增用例独立验证默认摘要、筛选、完整导出与复核复用。
+- Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10：本地 HTTP 摄入及失败不落盘、顺带提及暂缓、单篇充分建页、别名跨篇补足与同义复用、冲突双方与来源保留、只读检索和检查、提炼检查点。场景 11 至场景 15 及新增场景 20 至场景 22 结合自动化回归核对；虚构材料中刻意保留的冲突继续报警，未自动裁决。最终验证无未解决失败项。
+
+本次修改文件清单：
+
+- 入口说明：`SKILL.md`、`README.md`、`README.en.md`。
+- 策略与回归说明：`references/README.md`、`references/golden-sample.md`、`references/ingest-policy.md`、`references/lint-policy.md`、`references/okf-frontmatter.md`、`references/provenance-policy.md`、`references/schema.md`、`references/review-workflow.md`（新增）、`docs/maintenance-history.md`。
+- 实现：`scripts/ingest_raw.py`、`scripts/lint_wiki.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`scripts/wiki_reviews.py`、`scripts/wiki_sources.py`。
+- 回归测试：`tests/test_citation_scope.py`、`tests/test_evidence_diagnostics.py`、`tests/test_evidence_priority.py`、`tests/test_ingest_raw.py`、`tests/test_lint_reports.py`（新增）、`tests/test_lint_wiki.py`、`tests/test_provenance_search.py`、`tests/test_synthesis.py`、`tests/test_workflow_tools.py`。

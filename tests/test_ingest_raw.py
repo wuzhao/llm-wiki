@@ -14,6 +14,105 @@ SCRIPT = ROOT / "scripts" / "ingest_raw.py"
 
 
 class IngestRawTests(unittest.TestCase):
+    def test_kb_relocation_reuses_relative_file_and_preserves_identity(self):
+        from wiki_metadata import split_frontmatter
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(Path(directory) / 'old')
+            source = kb / 'raw/assets/input.md'
+            source.write_text('original evidence')
+            first = self.run_ingest(kb, '--file', source)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            relative_raw = Path(first.stdout.strip()).relative_to(kb)
+            old_bytes = (kb / relative_raw).read_bytes()
+            metadata = split_frontmatter(old_bytes.decode())[1]
+            self.assertEqual(metadata['source_file_path'], 'raw/assets/input.md')
+            self.assertEqual(metadata['source_capture_path'], str(source))
+            moved = Path(directory) / 'new'
+            kb.rename(moved)
+            before = snapshot(moved)
+            retry = self.run_ingest(moved, '--file', moved / 'raw/assets/input.md')
+            self.assertEqual(retry.returncode, 0, retry.stderr)
+            self.assertEqual(Path(retry.stdout.strip()), (moved / relative_raw).resolve())
+            self.assertEqual(snapshot(moved), before)
+            (moved / 'raw/assets/input.md').write_text('new evidence')
+            update = self.run_ingest(moved, '--file', moved / 'raw/assets/input.md')
+            self.assertEqual(update.returncode, 0, update.stderr)
+            new = split_frontmatter(Path(update.stdout.strip()).read_text())[1]
+            self.assertEqual(new['source_id'], metadata['source_id'])
+            self.assertEqual(new['source_version'], 2)
+            self.assertEqual(new['supersedes'], relative_raw.as_posix())
+            self.assertEqual((moved / relative_raw).read_bytes(), old_bytes)
+
+    def test_external_file_relocation_explicitly_continues_versions(self):
+        from wiki_metadata import split_frontmatter
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(Path(directory) / 'kb')
+            source = Path(directory) / 'old.txt'
+            source.write_text('same evidence')
+            first = self.run_ingest(kb, '--file', source)
+            old = Path(first.stdout.strip())
+            metadata = split_frontmatter(old.read_text())[1]
+            before = old.read_bytes()
+            target = source.with_name('new.txt')
+            source.rename(target)
+            moved = self.run_ingest(kb, '--file', target, '--source-id', metadata['source_id'])
+            self.assertEqual(moved.returncode, 0, moved.stderr)
+            self.assertNotEqual(first.stdout, moved.stdout)
+            new = split_frontmatter(Path(moved.stdout.strip()).read_text())[1]
+            self.assertEqual(new['source_id'], metadata['source_id'])
+            self.assertEqual(new['source_version'], 2)
+            self.assertEqual(new['source_file_path'], str(target.resolve()))
+            self.assertEqual(old.read_bytes(), before)
+            retry = self.run_ingest(kb, '--file', target)
+            self.assertEqual(retry.stdout, moved.stdout)
+
+    def test_url_relocation_keeps_identity_and_retries_reuse_the_new_capture(self):
+        from wiki_metadata import split_frontmatter
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(directory)
+            first = self.run_ingest(kb, '--url', 'data:text/plain,evidence', '--title', 'URL')
+            self.assertEqual(first.returncode, 0, first.stderr)
+            old = Path(first.stdout.strip())
+            original = old.read_bytes()
+            identity = split_frontmatter(original.decode())[1]['source_id']
+            url = 'data:text/plain;charset=utf-8,evidence'
+            moved = self.run_ingest(kb, '--url', url, '--source-id', identity, '--title', 'URL')
+            self.assertEqual(moved.returncode, 0, moved.stderr)
+            self.assertNotEqual(first.stdout, moved.stdout)
+            metadata = split_frontmatter(Path(moved.stdout.strip()).read_text())[1]
+            self.assertEqual(metadata['source_id'], identity)
+            self.assertEqual(metadata['source_version'], 2)
+            self.assertEqual(metadata['resource'], url)
+            self.assertEqual(metadata['supersedes'], old.relative_to(kb).as_posix())
+            before = snapshot(kb)
+            self.assertEqual(self.run_ingest(kb, '--url', url, '--title', 'URL').stdout, moved.stdout)
+            self.assertEqual(snapshot(kb), before)
+            self.assertEqual(old.read_bytes(), original)
+
+    def test_legacy_file_without_id_is_reused_and_ambiguous_location_rejected(self):
+        from wiki_metadata import split_frontmatter
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(Path(directory) / 'kb')
+            source = Path(directory) / 'input.txt'
+            source.write_text('evidence')
+            first = self.run_ingest(kb, '--file', source)
+            raw = Path(first.stdout.strip())
+            _, metadata, body, _ = split_frontmatter(raw.read_text())
+            identity = metadata.pop('source_id')
+            raw.write_text('---\n' + yaml.safe_dump(metadata) + '---\n' + body)
+            before = snapshot(kb)
+            self.assertEqual(self.run_ingest(kb, '--file', source).stdout, first.stdout)
+            self.assertEqual(snapshot(kb), before)
+            metadata['source_id'] = 'different-source'
+            (kb / 'raw/other.md').write_text('---\n' + yaml.safe_dump(metadata) + '---\n' + body)
+            before = snapshot(kb)
+            result = self.run_ingest(kb, '--file', source)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('多个来源身份', result.stderr)
+            self.assertEqual(snapshot(kb), before)
+            explicit = self.run_ingest(kb, '--file', source, '--source-id', identity)
+            self.assertEqual(explicit.returncode, 0, explicit.stderr)
+
     def run_ingest(self, *args):
         return subprocess.run(
             [sys.executable, str(SCRIPT), *map(str, args)],
@@ -148,13 +247,13 @@ class IngestRawTests(unittest.TestCase):
             metadata = yaml.safe_load(first_path.read_text().split("---\n", 2)[1])
             self.assertEqual(metadata["source_file_sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
             source.write_text("changed source\n")
-            lint = subprocess.run([sys.executable, str(ROOT / "scripts/lint_wiki.py"), str(kb)], capture_output=True, text=True)
+            lint = subprocess.run([sys.executable, str(ROOT / "scripts/lint_wiki.py"), str(kb), "--details"], capture_output=True, text=True)
             self.assertIn("与当前原始文件不一致", lint.stdout)
             second = self.run_ingest(kb, "--file", source)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertNotEqual(second.stdout, first.stdout)
             self.assertEqual(first_path.read_bytes(), old)
-            lint = subprocess.run([sys.executable, str(ROOT / "scripts/lint_wiki.py"), str(kb)], capture_output=True, text=True)
+            lint = subprocess.run([sys.executable, str(ROOT / "scripts/lint_wiki.py"), str(kb), "--details"], capture_output=True, text=True)
             self.assertNotIn("与当前原始文件不一致", lint.stdout)
             new_metadata = yaml.safe_load(Path(second.stdout.strip()).read_text().split("---\n", 2)[1])
             self.assertEqual(new_metadata["source_id"], metadata["source_id"])
@@ -214,7 +313,7 @@ class IngestRawTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             path = Path(first.stdout.strip())
             path.write_text(path.read_text().replace('old body', 'tampered body'))
-            lint = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--fail-on', 'error'], capture_output=True, text=True)
+            lint = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--details', '--fail-on', 'error'], capture_output=True, text=True)
             self.assertEqual(lint.returncode, 1)
             self.assertIn('raw 正文与保存时的指纹不一致', lint.stdout)
 

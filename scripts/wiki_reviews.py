@@ -76,4 +76,7 @@ def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
 def checker_fingerprint():
     root = Path(__file__).parent
     return digest(''.join((root / name).read_text(encoding='utf-8') for name in
-                         ('wiki_numbers.py', 'wiki_evidence.py', 'wiki_provenance.py', 'wiki_reviews.py')))
+                         ('wiki_numbers.py', 'wiki_evidence.py', 'wiki_provenance.py', 'wiki_reviews.py',
+                          'markdown_links.py', 'wiki_links.py', 'wiki_sources.py', 'wiki_metadata.py',
+                          'wiki_config.py')) +
+                  (root.parent / 'references/schema.json').read_text(encoding='utf-8'))

@@ -27,6 +27,8 @@ class WorkflowToolTests(unittest.TestCase):
         self.temp.cleanup()
 
     def command(self, script, *args):
+        if script == 'lint_wiki.py':
+            args = ('--details', *args)
         return subprocess.run([sys.executable, str(ROOT / "scripts" / script), str(self.kb), *args],
                               capture_output=True, text=True)
 

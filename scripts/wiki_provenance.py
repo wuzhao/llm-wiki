@@ -39,6 +39,25 @@ def mask_claim_markup(text):
     return mask_link_metadata(text, lambda at: text.rfind("\n", 0, at) + 1 in navigation)
 
 
+def prose_blocks(prose, base=0):
+    """A citation cannot cross a paragraph, heading, list item or table row."""
+    start, offset = None, 0
+    for line in prose.splitlines(keepends=True):
+        boundary = re.match(r"^[ \t]*(?:#{1,6}[ \t]+|[-+*][ \t]+|\d+[.)][ \t]+|\|)", line)
+        if start is not None and (not line.strip() or boundary):
+            yield base + start, prose[start:offset]
+            start = None
+        if line.strip() and start is None:
+            start = offset
+        offset += len(line)
+        # Table rows and headings never lend their trailing citations to prose.
+        if start is not None and re.match(r"^[ \t]*(?:\||#{1,6}[ \t]+)", line):
+            yield base + start, prose[start:offset]
+            start = None
+    if start is not None:
+        yield base + start, prose[start:offset]
+
+
 def claim_blocks(prose):
     """Only an explicit caption grants scope to the immediately following table."""
     lines = prose.splitlines(keepends=True)
@@ -64,8 +83,7 @@ def claim_blocks(prose):
         tables[start] = (end, caption[1].strip())
     cursor = 0
     for start, (end, references) in tables.items():
-        for paragraph in re.finditer(r"(?:[^\n]+\n?)+", prose[cursor:offsets[start]]):
-            yield cursor + paragraph.start(), paragraph.group()
+        yield from prose_blocks(prose[cursor:offsets[start]], cursor)
         for row in range(start, end):
             if row == start + 1:
                 continue
@@ -74,8 +92,7 @@ def claim_blocks(prose):
                 text += references
             yield offsets[row], text
         cursor = offsets[end] if end < len(lines) else len(prose)
-    for paragraph in re.finditer(r"(?:[^\n]+\n?)+", prose[cursor:]):
-        yield cursor + paragraph.start(), paragraph.group()
+    yield from prose_blocks(prose[cursor:], cursor)
 
 
 class ProvenanceGraph:

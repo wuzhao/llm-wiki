@@ -220,6 +220,10 @@ The policies and templates currently use Chinese, with some headings and index c
 
 Attachments can be stored byte-for-byte and linked to separately extracted text. Missing external source files produce warnings by default; damaged stored snapshots remain errors. Use `lint --strict-sources` when external source availability must block validation.
 
+Saved source identities survive relocation. New captures of files inside the knowledge base store relative paths. After confirming that a moved file or URL is the same source, use `--source-id` to continue its version history without rewriting old snapshots. See the [ingestion policy](references/ingest-policy.md).
+
+Lint prints a compact summary by default. Use `--details` for complete diagnostics or `--report-page` and `--report-category` to filter displayed details. These filters do not change scanning, repairs, or exit status; `--report-file` always exports the complete scan report. The [review workflow](references/review-workflow.md) explains how to export candidates, record evidence, and explicitly reuse valid reviews. Original findings and pending evidence claims are counted separately; reviews do not lower severity or bypass strict exit codes.
+
 - Extraction preserves code, links, and simple HTML tables; complex tables retain HTML. The fetcher does not execute JavaScript, download page images, or extract PDF and other binary attachment contents. Supply usable text when needed.
 - Existing raw bodies are read-only. `lint --fix` only fills determinable `type` and `title` fields there. Other metadata corrections require source evidence and a log record.
 - Structural validity and a matching number do not prove a claim. Reading can continue across batches; disclose unreadable content and distinguish partial results from conclusions about the whole wiki.

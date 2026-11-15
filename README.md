@@ -126,6 +126,10 @@ https://github.com/wuzhao/llm-wiki
 执行上次报告中的安全修复，复查并列出仍需人工判断的问题。
 ```
 
+lint 默认返回简短摘要与重点页面。使用 `--details` 查看全部诊断，或用 `--report-page`、`--report-category` 筛选显示；`--report-file` 始终导出完整扫描报告。显示筛选不影响检查范围、修复范围或退出码。
+
+已核对的候选可以通过复核记录供下次显式加载，摘要分别显示原始告警与待复核主张数。具体步骤见 [复核记录工作流](references/review-workflow.md)。
+
 ### 想自己操作
 
 向 Agent 询问以下任务、模式或工具的用法：
@@ -206,6 +210,8 @@ ingest 根据来源身份与内容变化处理首次保存或版本更新；相�
 索引定位内容，概览说明覆盖范围，月度日志记录操作及待复核事项。备份应包含完整知识库；日志是变更摘要，不能替代完整文件历史。手动修改知识页后，可让 Agent 检查引用与索引。
 
 外部本地源文件被移动或删除时，默认提醒无法检查更新；库内快照损坏仍会阻断检查。需要严格监控原文件时可使用 `lint --strict-sources`。
+
+已保存的来源身份不随路径变化重算，新摄入的库内文件使用相对路径。文件或 URL 迁移后，可在核对来源对应关系后用 `--source-id` 接续版本，保留旧快照；具体见 [来源迁移与版本接续](references/ingest-policy.md#来源迁移与版本接续)。
 
 目录和字段见 [结构说明](references/schema.md)、[schema.json](references/schema.json)；Frontmatter 见 [OKF 0.2 profile](references/okf-frontmatter.md)。
 

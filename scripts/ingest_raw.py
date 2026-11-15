@@ -23,7 +23,7 @@ from wiki_config import SchemaError, infer_document_type, load_schema, resolve_w
 from wiki_io import checked_destination, create_unique_bytes, create_unique_text
 from html_markdown import ArticleTextParser
 from wiki_metadata import body_sha256, content_sha256
-from wiki_sources import document_content_hash, raw_inventory, source_identity
+from wiki_sources import document_content_hash, raw_inventory, source_identity, source_locator
 
 
 def clean_filename(title):
@@ -85,10 +85,20 @@ def store_material(kb_dir, raw_destination, base_name, content, metadata, captur
         if errors:
             raise ValueError("无法安全检查已有素材: " + ", ".join(sorted(errors)))
         identity = source_identity(metadata, kb_dir)
+        if not metadata.get("source_id"):
+            locator = source_locator(metadata, kb_dir)
+            matches = {source_identity(doc["metadata"], kb_dir) for doc in documents.values()
+                       if locator and source_locator(doc["metadata"], kb_dir) == locator}
+            if len(matches) > 1:
+                raise ValueError("当前位置对应多个来源身份，请用 --source-id 明确选择")
+            if matches:
+                identity = matches.pop()
         previous = latest.get(identity)
         fingerprint = content_sha256(content)
         previous_metadata = documents[previous]["metadata"] if previous else {}
         same_capture = (not metadata.get("source_file_sha256") or metadata["source_file_sha256"] == previous_metadata.get("source_file_sha256"))
+        if metadata.get('source_file_path') or metadata.get('resource'):
+            same_capture = same_capture and source_locator(metadata, kb_dir) == source_locator(previous_metadata, kb_dir)
         if metadata.get("source_snapshot"):
             same_capture = same_capture and all(metadata.get(key) == previous_metadata.get(key)
                                                 for key in ("source_snapshot", "source_snapshot_sha256"))
@@ -162,14 +172,14 @@ def main():
     source_group.add_argument("--file", help="Read content from a local file")
     source_group.add_argument("--text", help="Direct text content to ingest")
     parser.add_argument("--title", help="Title of the material")
-    parser.add_argument("--source-id", help="Reuse an explicit source identity for pasted-text revisions")
+    parser.add_argument("--source-id", help="Explicit source identity, including file/URL relocation or revisions")
     parser.add_argument("--attachment", help="Existing raw/assets path for the original attachment of extracted text")
     
     args = parser.parse_args()
     if args.text is not None and not (args.title or "").strip():
         parser.error("使用 --text 时必须同时提供 --title")
-    if args.source_id is not None and (args.text is None or not args.source_id.strip()):
-        parser.error("--source-id 仅用于为粘贴文本指定非空来源身份")
+    if args.source_id is not None and not args.source_id.strip():
+        parser.error("--source-id 必须是非空来源身份")
     if args.attachment and args.url:
         parser.error("--attachment 仅用于本地提取文本或粘贴文本，URL 自行保存响应快照")
     kb_dir = os.path.abspath(args.kb_dir)
@@ -248,13 +258,19 @@ def main():
     if args.url:
         metadata["resource"] = args.url
     if source_file_path:
-        metadata["resource"] = source_file_path
-        metadata["source_file_path"] = source_file_path
+        source_path = Path(source_file_path).resolve()
+        base = Path(kb_dir).resolve()
+        location = source_path.relative_to(base).as_posix() if source_path.is_relative_to(base) else str(source_path)
+        metadata["resource"] = location
+        metadata["source_file_path"] = location
+        metadata["source_capture_path"] = source_file_path
         metadata["source_file_sha256"] = source_file_sha256
     if args.text is not None:
         default_id = ("attachment:" + attachment_metadata["source_snapshot_sha256"] if attachment_metadata
                       else "text:" + content_sha256(content))
         metadata["source_id"] = args.source_id.strip() if args.source_id else default_id
+    if args.source_id is not None:
+        metadata["source_id"] = args.source_id.strip()
     metadata.update(attachment_metadata)
     
     try:

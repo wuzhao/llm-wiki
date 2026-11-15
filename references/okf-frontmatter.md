@@ -60,9 +60,9 @@ synthesis:
 
 - `type` 必填，固定由路径推断为 `source-material`。
 - `title` 用于辨识素材，缺失时 lint 可以安全补齐。
-- `resource` 统一记录来源 URL 或本地文件路径。本地文件另用 `source_file_path` 与 `source_file_sha256` 记录文件位置及校验指纹。
+- `resource` 统一记录来源 URL 或本地文件路径。本地文件另用 `source_file_path` 与 `source_file_sha256` 记录当前位置及校验指纹；新摄入的库内文件使用知识库相对路径，库外文件使用绝对路径。`source_capture_path` 保留本次采集时的原始绝对输入路径，仅作历史记录，不用于定位或身份计算。
 - `timestamp` 表示采集时间，是 LLM Wiki 自定义字段，不是 OKF 0.2 推荐字段。
-- `source_id`、`source_version`、`supersedes` 分别记录来源身份、版本与前一快照的知识库相对路径；`content_sha256` 用于相同内容提醒，`body_sha256` 用于检测 raw 正文是否改变。
+- `source_id`、`source_version`、`supersedes` 分别记录来源身份、版本与前一快照的知识库相对路径；有效的已存 `source_id` 优先，不随路径或 URL 变化重算。没有身份的旧页面仍按原有路径或 URL 规则推导，不批量改写历史。`content_sha256` 用于相同内容提醒，`body_sha256` 用于检测 raw 正文是否改变。迁移与显式接续见 `ingest-policy.md`。
 - URL 的 `source_snapshot` 使用知识库相对路径，指向 `raw/assets/` 中的原始响应；`source_snapshot_sha256` 校验响应字节，`source_media_type`、`source_encoding`、`resolved_url` 与 `extraction_version` 描述提取过程；这些都是本项目扩展。
 - 附件提取文本通过 `--attachment` 关联已保存原件，复用 `source_snapshot` 和 `source_snapshot_sha256`；不为人工提取伪造 URL、编码或提取器版本。
 - lint 不要求 raw 提供 wiki profile 的 `description`、`tags`、`generated`、`verified`、`status` 或 `stale_after`。
@@ -78,6 +78,15 @@ synthesis:
 OKF 0.2 推荐标准 Markdown 链接。LLM Wiki 同时支持 Obsidian Wikilink 作为本地扩展；可移植性优先的内容应使用标准 Markdown 的 bundle-root 绝对路径或相对路径。
 
 wiki 内的 `/concepts/example.md` 指向 `wiki/concepts/example.md`。以配置中 raw、assets 或 wiki 根路径开头的绝对链接保留知识库根语义，例如 `/raw/source.md`、`/wiki/concepts/example.md`；其他相对路径以当前文件所在目录解析。正文与 `sources[].resource` 共用此规则，Wikilink 沿用既有规则。
+
+本节是链接解析规则的唯一规范位置：
+
+- 页面身份使用知识库相对完整路径，不以文件名代替。
+- wiki 内省略根前缀的 Wikilink 以 wiki 为根，例如 `[[concepts/example]]`；raw 内省略前缀的 Wikilink 以知识库为根。显式写出 `raw/`、`raw/assets/`、`wiki/` 或前导 `/` 时，Wikilink 以知识库为根。
+- Wikilink 可省略 `.md`，并使用 `#标题` 或 `#^块标识`；标准 Markdown 链接按实际路径解析。
+- 无法直接解析的同名链接仅作为候选，唯一性与修复边界见 `lint-policy.md`，不能把唯一候选当成已有效的路径。
+
+例如位于 `wiki/concepts/a.md` 的 `[示例](/concepts/example.md)` 与 `[[concepts/example]]` 均指向 `wiki/concepts/example.md`；`[原文](/raw/source.md)` 指向 `raw/source.md`。
 
 ## 示例
 
@@ -101,6 +110,6 @@ stale_after: 2027-03-14T00:00:00Z
 ## 兼容与校验
 
 - 无法解析的 YAML 只报告，不自动重写。
-- `source_url` 是旧 raw 扩展字段，不是 OKF 标准字段。URL 来源身份优先使用 `resource`，未提供 `resource` 时才兼容读取旧 `source_url`；不将本地路径或其他非 URL 的 `resource` 回退为旧 URL。两字段同时存在且值不一致时，lint 报告中等问题，不自动覆盖或删除；历史文件无需批量重写。
+- `source_url` 是旧 raw 扩展字段，不是 OKF 标准字段。无已存身份时，URL 身份推导优先使用 `resource`，未提供 `resource` 时才兼容读取旧 `source_url`；不将本地路径或其他非 URL 的 `resource` 回退为旧 URL。两字段同时存在且值不一致时，lint 报告中等问题，不自动覆盖或删除；历史文件无需批量重写。
 - 旧 wiki 页面中的 `timestamp`、`verified_at` 与 `last_reviewed` 仍可用于陈旧性判断，但新模板不再生成这些字段。
 - profile 的具体 lint 行为见 `lint-policy.md`，路径到 `type` 的映射和 OKF 版本见 `schema.json`。

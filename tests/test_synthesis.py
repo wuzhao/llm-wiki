@@ -64,6 +64,8 @@ class SynthesisTests(unittest.TestCase):
         return plan
 
     def command(self, script="synthesis_wiki.py", *args):
+        if script == "lint_wiki.py":
+            args = ("--details", *args)
         return subprocess.run([sys.executable, str(ROOT / "scripts" / script), str(self.kb), *args],
                               text=True, capture_output=True)
 

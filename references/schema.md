@@ -46,12 +46,9 @@
 
 ## 链接规范
 
-- 标准 Markdown 相对链接以当前文件目录为基准，以 `/` 开头时以知识库根目录为基准。
-- Wiki 页面中的 Wikilink 默认以 `wiki/` 为根；指向原始素材或附件时写出完整的 `raw/` 或 `raw/assets/` 前缀。
-- 页面身份使用知识库相对完整路径，不使用 basename 代替路径。
-- 失效链接的同名候选只在原链接意图指向的 `link_roots` 范围内查找，不跨素材正文、附件与 wiki 猜测；`raw/assets/` 中的文件优先归属附件范围，不同时作为 raw 素材页候选。
-- 省略目录的 basename 链接仅在同一链接根目录内唯一匹配时有效。
-- index、overview、logs 和页面自链接不计入孤儿页的知识入链。
+链接解析规则统一定义在 [OKF profile 的链接扩展](okf-frontmatter.md#链接扩展)，包括 wiki bundle 根路径与知识库根路径的区别。`schema.json` 仅定义路径和允许的链接范围。
+
+失效链接修复、索引与孤儿页判定统一遵循 [Lint Policy](lint-policy.md)，不在本文件另设行为规则。
 
 ## Frontmatter
 

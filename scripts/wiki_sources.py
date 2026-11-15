@@ -10,6 +10,11 @@ from wiki_metadata import content_sha256, parse_datetime, raw_content, split_fro
 
 
 def source_identity(metadata, kb_dir):
+    # Saved identities survive relocation. Derivation is only for legacy pages
+    # without an id and for the first capture of a new source.
+    identity = metadata.get("source_id")
+    if isinstance(identity, str) and identity.strip():
+        return identity
     source_file = metadata.get("source_file_path")
     resource = metadata.get("resource")
     url = metadata.get("source_url") if not resource else None
@@ -27,6 +32,13 @@ def source_identity(metadata, kb_dir):
     else:
         return metadata.get("source_id") if isinstance(metadata.get("source_id"), str) else None
     return "sha256:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def source_locator(metadata, kb_dir):
+    """Match the current location without confusing it with durable identity."""
+    fields = dict(metadata)
+    fields.pop("source_id", None)
+    return source_identity(fields, kb_dir)
 
 
 def walk_visible_files(root, errors=None, kb_dir=None, excluded_roots=()):

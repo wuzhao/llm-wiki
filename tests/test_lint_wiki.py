@@ -69,7 +69,7 @@ class LintWikiTests(unittest.TestCase):
 
     def run_lint(self, *args):
         return subprocess.run(
-            [sys.executable, str(SCRIPT), str(self.kb), *args],
+            [sys.executable, str(SCRIPT), str(self.kb), "--details", *args],
             cwd=ROOT,
             text=True,
             capture_output=True,

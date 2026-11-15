@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from collections import Counter, defaultdict
 import html
+import hashlib
+import json
 import re
 
 
@@ -22,6 +24,48 @@ def inline_text(value):
     # Source material is data, not Markdown instructions or report headings.
     value = html.escape(re.sub(r"\s+", " ", value), quote=False)
     return re.sub(r"([\\`*_{}\[\]\|])", r"\\\1", value)
+
+
+def finding_id(path, finding):
+    identity = [path, finding.get('line'), finding.get('category', 'other'), finding['problem']]
+    return 'L-' + hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def review_counts(all_issues):
+    details = [d for _, finding in all_issues for d in finding.get('details', [])]
+    reviewed = sum(bool(d.get('review')) for d in details)
+    completed = sum(bool(f.get('details')) and all(d.get('review') for d in f['details'])
+                    for _, f in all_issues)
+    return len(details), reviewed, completed
+
+
+def compact_queue(all_issues, limit, write_enabled=False, show_repairs=False):
+    pages = defaultdict(Counter)
+    categories = Counter()
+    for path, finding in all_issues:
+        pages[path][finding['level']] += 1
+        categories[finding.get('category', 'other')] += 1
+    result = ('### 处理队列\n\n'
+              f"证据候选 {categories['evidence']} 条，引用完整性 {categories['citation']} 条，"
+              f"其他检查 {categories['other']} 条。\n\n")
+    for path, finding in all_issues:
+        if finding['level'] == '🔴':
+            state = ('已修复；' if write_enabled else '计划修复；') if show_repairs and finding['is_auto'] else ''
+            result += (f"- 🔴 {format_issue_location(path, finding.get('line'))}："
+                       f"{state}{inline_text(finding['problem'])}（{finding_id(path, finding)}）\n")
+    if pages:
+        result += '\n| 页面 | 严重 | 中等 | 轻微 |\n| ---- | ---: | ---: | ---: |\n'
+        ordered = sorted(pages.items(), key=lambda item: (
+            -item[1]['🔴'], -item[1]['🟡'], -item[1]['🔵'], item[0]))
+        for path, counts in ordered[:limit]:
+            result += f"| {format_issue_location(path)} | {counts['🔴']} | {counts['🟡']} | {counts['🔵']} |\n"
+        result += f'\n显示 {min(len(pages), limit)} / {len(pages)} 个有告警页面，按严重级别与数量排序。\n'
+    result += ('\n下一步：先处理严重问题，再核对引用与来源；证据候选由 Agent 阅读原文复核。'
+               '使用 --details 查看全部详情，--report-page / --report-category 筛选详情，'
+               '--report-file 导出完整报告。显示范围不改变扫描、修复计划与退出码。\n'
+               '\n复核复用：--review-template 导出候选，核对后填写记录，下次用 --review-file 显式加载；'
+               '内容或规则变化后重新复核。\n')
+    return result
 
 
 def candidate_groups(all_issues):
@@ -52,8 +96,14 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
     item = f"- {issue['level']} {format_issue_location(relative_path, issue['line'])}\n  {label}：{issue['problem']}"
     if issue["action"]:
         item += f"\n  {action_label}：{issue['action']}"
+    item += f"\n  问题 id：`{finding_id(relative_path, issue)}`"
+    if issue.get('sources'):
+        item += '\n  来源范围：' + '、'.join(format_issue_location(p) for p in issue['sources'])
     for detail in issue.get("details", []):
         item += f"\n  - {detail.get('level', issue['level'])} 主张 {inline_text(detail['claim'])}：{detail['label']}。{detail['action']}"
+        item += f"\n    论断上下文：{inline_text(detail['context'])}"
+        if detail.get('review_id'):
+            item += f"\n    复核 id：`{detail['review_id']}`"
         if detail.get('review'):
             review = detail['review']
             item += f"\n    已复核（{inline_text(review['status'])}）：{inline_text(review['reason'])}；复核者 {inline_text(review['reviewer'])}"
@@ -86,15 +136,8 @@ def review_groups(all_issues):
         state = '待复核' if pending else '已复核'
         result += f'<details>\n<summary>{state}：{inline_text(path)}，{inline_text(claim)}，{len(rows)} 处</summary>\n\n'
         result += rows[0][1]['label'] + '。\n\n'
-        if sources:
-            result += '来源范围：' + '、'.join(format_issue_location(p) for p in sources) + '\n\n'
         for finding, detail in rows:
-            result += f"- {format_issue_location(path, detail.get('line', finding.get('line')))}：{inline_text(detail['context'])}\n"
-            if detail.get('review'):
-                review = detail['review']
-                result += f"  已复核：{inline_text(review['reason'])}（{inline_text(review['reviewer'])}，{inline_text(review['reviewed_at'])}）\n"
-            if detail.get('review_id'):
-                result += f"  复核 id：`{detail['review_id']}`\n"
+            result += f"- {format_issue_location(path, detail.get('line', finding.get('line')))}：`{finding_id(path, finding)}`\n"
         result += '\n</details>\n\n'
     return result
 
@@ -143,7 +186,8 @@ def unlocated_review_queue(all_issues):
     return report + "\n"
 
 
-def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix_requested=False):
+def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix_requested=False,
+                 details=True, page_limit=None):
     severity_counts = {"🔴": 0, "🟡": 0, "🔵": 0}
     auto_fixed = []
     manual = {"🔴": [], "🟡": [], "🔵": []}
@@ -153,7 +197,8 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix
         if issue["is_auto"] and show_repairs:
             auto_fixed.append(format_report_item(relative, issue, "修复操作"))
         else:
-            manual[issue["level"]].append((issue.get("category", "other"), format_report_item(relative, issue)))
+            manual[issue["level"]].append((issue.get("category", "other"),
+                                          format_report_item(relative, issue) if details else ''))
 
     if write_enabled:
         report = "## Lint 报告\n\n"
@@ -166,6 +211,19 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
     report += f"🔵 轻微: {severity_counts['🔵']} 个（表达或架构建议）\n\n"
+    total, reviewed, completed = review_counts(all_issues)
+    report += (f'证据主张 {total} 个：已有有效复核记录 {reviewed} 个，仍待复核 {total - reviewed} 个。\n'
+               f'原始告警 {len(all_issues)} 条，其中 {completed} 条证据告警的所有候选均已复核；'
+               '部分复核仍计入待办，其他类别须另行处理。复核不改变严重级别和退出码。\n\n')
+    unresolved = ({level for level, items in manual.items() if items} if write_enabled
+                  else {issue['level'] for _, issue in all_issues})
+    if not details:
+        if page_limit is None or page_limit <= 0:
+            raise ValueError('摘要报告需要 schema 提供的正数页面限额')
+        report += compact_queue(all_issues, page_limit, write_enabled, show_repairs)
+        if show_repairs:
+            report += '\n修复明细（逐项保留）：\n\n' + '\n'.join(auto_fixed) + '\n'
+        return LintReport(report, severity_counts, len(auto_fixed) if write_enabled else 0, unresolved)
     report += diagnostic_summary(all_issues)
     report += unlocated_review_queue(all_issues)
     report += review_groups(all_issues)
@@ -199,6 +257,4 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix
             report += '\n</details>\n'
 
     report += candidate_groups(all_issues)
-    unresolved = ({level for level, items in manual.items() if items} if write_enabled
-                  else {issue["level"] for _, issue in all_issues})
     return LintReport(report, severity_counts, len(auto_fixed) if write_enabled else 0, unresolved)

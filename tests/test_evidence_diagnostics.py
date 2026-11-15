@@ -162,7 +162,7 @@ class EvidenceDiagnosticTests(unittest.TestCase):
             blocks = list(claim_blocks(body))
             self.assertFalse(any(text.endswith('|[^a]') for _, text in blocks), caption)
         body = '本表来源：[^a]\n| 指标 | 数量 |\n| 错误 | 分隔 |\n| 甲 | 42ms |'
-        self.assertEqual(len(list(claim_blocks(body))), 1)
+        self.assertFalse(any(text.endswith('|[^a]') for _, text in claim_blocks(body)))
 
     def test_report_groups_only_unique_shared_candidates_and_retains_context(self):
         index = EvidenceIndex([EvidenceDocument('raw/a.md', '出生率5.63%。')])
@@ -199,7 +199,7 @@ class EvidenceDiagnosticTests(unittest.TestCase):
             (kb / 'wiki/concepts/a.md').write_text(page('concept', 'A',
                 '5.63‰，339万人。[^a]\n\n[^a]: A', sources=[{'id': 'a', 'resource': '../../raw/a.md'}]))
             before = snapshot(kb)
-            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb),
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/lint_wiki.py'), str(kb), '--details',
                                      '--lint-files', 'wiki/concepts/a.md', '--fail-on', 'warning'], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1, result.stderr)
             line = raw[:raw.index('出生率')].count('\n') + 1

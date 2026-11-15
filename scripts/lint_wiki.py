@@ -795,6 +795,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Report without writing; combine with --fix to preview repairs")
     parser.add_argument("--strict-sources", action="store_true", help="Treat inaccessible external source files as errors")
     parser.add_argument("--report-file", help="Path to save the markdown report")
+    parser.add_argument("--details", action="store_true", help="Print full diagnostics instead of the default summary")
+    parser.add_argument("--report-page", nargs="+", help="Show details for these KB-relative paths; does not limit checks or fixes")
+    parser.add_argument("--report-category", choices=("evidence", "citation", "other"),
+                        help="Filter displayed details only; exit status still covers every finding")
     parser.add_argument("--review-file", help="Read explicit semantic review records from JSON; never changes severity")
     parser.add_argument("--review-template", help="Export current review records as JSON outside the knowledge base")
     parser.add_argument("--fail-on", choices=("error", "warning", "any"),
@@ -824,6 +828,8 @@ def main():
         lint_roots = [resolve_within(kb_dir, path) for path in lint_dirs]
         selected_files = [resolve_within(kb_dir, path) for path in args.lint_files or []]
         index_path = resolve_within(kb_dir, index_relative)
+        report_pages = {resolve_within(kb_dir, path).relative_to(kb_dir).as_posix()
+                        for path in args.report_page or []}
     except SchemaError as exc:
         parser.error(str(exc))
     index_relative = index_path.relative_to(kb_dir).as_posix()
@@ -912,10 +918,20 @@ def main():
 
     review_data, stale_reviews = annotate_reviews(all_issues, snapshot, reviews, checker_fingerprint())
     result = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run,
-                          fix_requested=repair_enabled)
+                          fix_requested=repair_enabled, details=args.details and not (report_pages or args.report_category),
+                          page_limit=schema["limits"]["max_query_read_pages"])
     report = result.text
+    if report_pages or args.report_category:
+        selected_issues = [(path, finding) for path, finding in all_issues
+                           if (not report_pages or path in report_pages)
+                           and (not args.report_category or finding.get('category', 'other') == args.report_category)]
+        report += '\n以下为筛选详情，统计仅针对所显示条目；完整扫描统计和退出码以上方为准。\n\n'
+        report += build_report(selected_issues, len(markdown_files), write_enabled, args.dry_run,
+                               fix_requested=repair_enabled).text
+    review_notice = ''
     if stale_reviews:
-        report += f"\n复核记录提示：{stale_reviews} 条已复核记录未复用（内容、来源、规则、证据片段或本次范围不匹配），当前候选仍待复核。\n"
+        review_notice = f"\n复核记录提示：{stale_reviews} 条已复核记录未复用（内容、来源、规则、证据片段或本次范围不匹配），当前候选仍待复核。\n"
+        report += review_notice
 
     if write_enabled:
         written = []
@@ -937,13 +953,14 @@ def main():
     if report_path:
         try:
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(report_path, report.rstrip() + "\n")
+            complete_report = build_report(all_issues, len(markdown_files), write_enabled, args.dry_run,
+                                           fix_requested=repair_enabled).text + review_notice
+            atomic_write_text(report_path, complete_report.rstrip() + "\n")
         except OSError as exc:
             print(f"报告写入失败: {exc}" + ("；修复及日志已完成" if write_enabled else ""), file=sys.stderr)
             return 2
         print(f"Lint complete. Report saved to {report_path}")
-    else:
-        print(report)
+    print(report)
     if scan_errors:
         print("目录扫描未完成，覆盖不完整；未执行自动修复或追加修复日志，请恢复目录读取后重跑", file=sys.stderr)
         return 2
