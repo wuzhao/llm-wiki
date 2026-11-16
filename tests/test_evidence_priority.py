@@ -76,6 +76,18 @@ class EvidencePriorityTests(unittest.TestCase):
                 self.assertEqual(detail['kind'], 'qualifier-difference')
                 self.assertEqual(detail['level'], '🟡')
 
+    def test_missing_units_are_advice_but_do_not_approve_or_hide_other_risks(self):
+        for claim, raw in [('339万人', '339万'), ('339万', '339万人')]:
+            with self.subTest(claim=claim):
+                index = EvidenceIndex([EvidenceDocument('raw/a.md', raw)])
+                detail = index.diagnose(claim)[0]
+                self.assertEqual((detail['kind'], detail['level']), ('unit-missing', '🔵'))
+                self.assertTrue(index.missing(claim))
+        for claim, raw, kind in [('5.63‰', '5.63；另有5.63%。', 'unit-difference'),
+                                  ('2015年', '2015；另有15年。', 'year-abbreviation')]:
+            detail = self.detail(claim, raw)
+            self.assertEqual((detail['kind'], detail['level']), (kind, '🟡'))
+
     def test_approximation_candidate_does_not_hide_competing_boundary_or_unit(self):
         for raw, kind in [('约50%，另有超过50%。', 'qualifier-difference'),
                           ('约5.63‰，另有5.63%。', 'unit-difference')]:
@@ -148,9 +160,9 @@ class EvidencePriorityTests(unittest.TestCase):
     def test_cli_advice_does_not_fail_warning_threshold_and_is_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
             kb = initialize_kb(directory)
-            (kb / 'raw/a.md').write_text(page('source-material', 'A', '50%'))
+            (kb / 'raw/a.md').write_text(page('source-material', 'A', '50%，减少339万。'))
             summary = kb / 'wiki/summaries/a.md'
-            summary.write_text(page('source-summary', 'A', '## 摘要\n\n约50%。\n\n## 关键要点\n\n转述。',
+            summary.write_text(page('source-summary', 'A', '## 摘要\n\n约50%。\n\n## 关键要点\n\n减少339万人。',
                 sources=[{'id': 'a', 'resource': '../../raw/a.md'}]))
             index = kb / 'wiki/index.md'
             index.write_text(index.read_text().replace('## 素材来源', '## 素材来源\n\n- [[summaries/a]]')
@@ -161,6 +173,7 @@ class EvidencePriorityTests(unittest.TestCase):
                     '--lint-files', 'wiki/summaries/a.md', '--fail-on', threshold], capture_output=True, text=True)
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 self.assertIn('数值相同，仅普通近似词不同', result.stdout)
+                self.assertIn('候选存在单位省略或补全', result.stdout)
                 self.assertIn('证据表达建议', result.stdout)
                 self.assertNotIn('数值或引文证据待复核:', result.stdout)
                 self.assertEqual(snapshot(kb), before)

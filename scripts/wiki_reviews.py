@@ -128,5 +128,5 @@ def checker_fingerprint():
     return digest(''.join((root / name).read_text(encoding='utf-8') for name in
                          ('wiki_numbers.py', 'wiki_evidence.py', 'wiki_provenance.py', 'wiki_reviews.py', 'lint_wiki.py',
                           'markdown_links.py', 'wiki_links.py', 'wiki_sources.py', 'wiki_metadata.py',
-                          'wiki_config.py')) +
+                          'wiki_config.py', 'wiki_fragments.py')) +
                   (root.parent / 'references/schema.json').read_text(encoding='utf-8'))

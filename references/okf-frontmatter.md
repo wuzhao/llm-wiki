@@ -23,7 +23,7 @@
 - 新模板用 `generated.at` 记录最后一次有意义的内容变更。
 - 新模板用 `sources` 记录来源，并用 `verified` 记录核验事件。
 - `status` 只使用 `draft`、`stable` 或 `deprecated`；缺失时按 `stable` 解释。
-- 本地 profile 支持可选 `aliases` 字符串数组供搜索使用；`sources[].body_sha256` 记录实际读取的来源正文指纹，`sources[].historical: true` 表示该来源仅支撑明确保留的历史内容。逐条证据引用与依赖更新见 `provenance-policy.md`，不改变 OKF 的最小必填要求。
+- 本地 profile 支持可选 `aliases` 字符串数组供搜索使用；`sources[].body_sha256` 记录实际读取的来源正文指纹，可选 `sources[].fragments` 记录所引标题章节的指纹与位置，`sources[].historical: true` 表示该来源仅支撑明确保留的历史内容。片段格式、逐条证据引用与依赖更新见 `provenance-policy.md`，不改变 OKF 的最小必填要求。
 
 ### 来源摘要的提炼状态
 

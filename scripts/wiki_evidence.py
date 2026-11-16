@@ -143,9 +143,9 @@ class EvidenceIndex:
                 kind = related_quantity(value, original)
                 if kind:
                     candidates.append((kind, document.candidate(original)))
-            # An approximate candidate cannot hide a competing boundary, unit,
+            # An advisory candidate cannot hide a competing boundary, unit,
             # or ordinal difference. Ambiguous attribution still needs review.
-            candidates.sort(key=lambda item: (item[0] == "approximation-difference",
+            candidates.sort(key=lambda item: (item[0] in ("approximation-difference", "unit-missing"),
                                                item[0], item[1]["path"], item[1]["start"]))
             kind = value.diagnostic or (candidates[0][0] if candidates else "not-found")
             selected = [candidate for reason, candidate in candidates if reason == kind]
@@ -159,7 +159,7 @@ class EvidenceIndex:
     @staticmethod
     def detail(literal, kind, text, start, end, candidates):
         label, action = DIAGNOSTICS[kind]
-        level = "🔵" if kind == "approximation-difference" else "🟡"
+        level = "🔵" if kind in ("approximation-difference", "unit-missing") else "🟡"
         return {"claim": literal, "kind": kind, "label": label, "action": action, "level": level,
                 "start": start, "context": excerpt(text, start, end),
                 "candidates": candidates[:MAX_CANDIDATES], "candidate_count": len(candidates)}

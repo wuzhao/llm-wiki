@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from markdown_links import (blank, escaped, mask_link_metadata, mask_non_prose,
                             standard_link_occurrences, wikilink_spans)
 from wiki_metadata import body_sha256, parse_datetime
+from wiki_fragments import fragment_changes
 from wiki_evidence import EvidenceDocument, EvidenceIndex, claim_literals, claim_text, missing_literals, quoted_literals
 from wiki_sources import document_content_hash, latest_sources, load_documents, source_identity
 
@@ -118,6 +119,7 @@ class ProvenanceGraph:
         self.evidence_documents = {}
         self.evidence_indexes = {}
         self.drift = defaultdict(set)
+        self.drift_advice = defaultdict(set)
         for path, document in self.documents.items():
             sources = document["metadata"].get("sources", [])
             entries = []
@@ -142,28 +144,38 @@ class ProvenanceGraph:
                 if document is None:
                     continue
                 expected = source.get("body_sha256")
-                if expected and expected != body_sha256(document["body"]):
-                    self.drift[path].add(f"{target} 的正文指纹已变化")
+                scoped = "fragments" in source
+                changes = fragment_changes(document, source["fragments"]) if scoped else []
+                self.drift[path].update(f"{target} 的{reason}" for reason in changes)
+                if expected and (not isinstance(expected, str) or expected.lower() != body_sha256(document["body"])):
+                    if scoped and not changes:
+                        self.drift_advice[path].add(f"{target} 的正文指纹已变化，已记录的引用片段未变（片段外或换行格式变化）")
+                    elif not scoped:
+                        self.drift[path].add(f"{target} 的正文指纹已变化（未记录引用片段，无法定位差异）")
                 current = self.latest.get(source_identity(document["metadata"], kb_dir)) if target in self.raw else None
                 if current and current != target and document_content_hash(self.raw[current]) != document_content_hash(document):
                     self.drift[path].add(f"{target} 已有新版本 {current}")
                 target_date = self.generated_at(target)
                 if not expected and owner_date and target_date and target_date > owner_date:
-                    self.drift[path].add(f"{target} 的内容更新时间晚于派生页")
+                    if scoped and not changes:
+                        self.drift_advice[path].add(f"{target} 的内容更新时间晚于派生页，已记录的引用片段未变")
+                    elif not scoped:
+                        self.drift[path].add(f"{target} 的内容更新时间晚于派生页（未记录引用片段，无法定位差异）")
 
     def generated_at(self, path):
         metadata = self.documents[path]["metadata"]
         generated = metadata.get("generated")
         return parse_datetime(generated.get("at")) if isinstance(generated, dict) else None
 
-    def dependency_drift(self, path):
+    def dependency_drift(self, path, level="🟡"):
         reachable, queue = {path}, [path]
         while queue:
             for target in self.current_edges[queue.pop()]:
                 if target not in reachable:
                     reachable.add(target)
                     queue.append(target)
-        return sorted({reason for upstream in reachable for reason in self.drift[upstream]})
+        drift = self.drift_advice if level == "🔵" else self.drift
+        return sorted({reason for upstream in reachable for reason in drift[upstream]})
 
     def walk(self, start):
         if start in self.walk_cache:
@@ -286,6 +298,11 @@ class ProvenanceGraph:
             snapshot = path.startswith(self.schema["paths"]["analyses"] + "/")
             action = "归档快照仅标记待复核，不覆盖历史结论" if snapshot else "核对受影响结论并更新来源快照，保留历史及冲突"
             issues.append(issue("🟡", "来源依赖需要复核: " + "; ".join(reasons), action))
+        else:
+            advice = self.dependency_drift(path, "🔵")
+            if advice:
+                issues.append(issue("🔵", "来源依赖变更提示: " + "; ".join(advice),
+                                    "按需核对片段外上下文；无需因该提示整页重查，不自动刷新来源快照"))
         by_id = {}
         for source, target, _ in entries:
             key = source.get("id")

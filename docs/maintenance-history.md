@@ -215,3 +215,14 @@
 - 本次未重跑实际知识库的 53 条记录，未声称它们已闭合；库外核验依据仍须入库，日期语义、主张归因与证据支持关系由复核者逐项核对。
 
 本次修改文件：`SKILL.md`、`docs/maintenance-history.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/review-workflow.md`、`scripts/lint_wiki.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`scripts/wiki_reviews.py`、`tests/test_reviews.py`。
+
+### 同日单位补全与引用片段验证
+
+- 发布版本从 `0.2.13` 更新为 `0.2.14`，模板继续通过统一渲染读取版本。
+- 单位省略或补全候选降为蓝色表达建议，继续保留候选与上下文核对要求；候选排序同时保证年份歧义、单位不同等黄色候选优先，不将降级等同于精确支持。
+- 新增可选 `sources[].fragments` 与只读 `impact_wiki.py --heading` 导出。以唯一 ATX 标题定位完整章节及子章节，包含上级标题上下文，仅统一行尾编码与片段边界空行。未引用片段变化给蓝色提示；被引片段、标题定位或记录格式异常保持黄色，提供章节及当前行范围。
+- 旧整页指纹与时间兜底继续兼容，无法从旧哈希还原引用范围。上游黄色告警与 raw 新版本提醒仍向下游传播；片段未变不代表片段外条件一定无关，采用范围由实际复核确定。lint、快照导出和原始正文均保持只读，不自动迁移已有知识页。
+- 使用项目 `.venv` 执行全量 unittest，263 项通过；新增片段与候选优先级用例覆盖定位、删除、改名、重复标题、子章节、上下文、Unicode 分隔字符、换行、非法记录、时间兜底、传递依赖、历史豁免及退出码。复查时补强 Unicode 分隔字符处理后，14 项片段专项测试再次通过。
+- 项目一致性检查与 `git diff --check` 通过；Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10，场景 11 至场景 15 结合完整自动化回归核对，新增场景 24 覆盖片段分流。本次未读取或修改 phanwiki，未验证其 219 页告警分布。
+
+本次修改文件：`SKILL.md`、`scripts/wiki_evidence.py`、`scripts/wiki_fragments.py`（新增）、`scripts/wiki_provenance.py`、`scripts/impact_wiki.py`、`scripts/wiki_reviews.py`、`tests/test_evidence_priority.py`、`tests/test_source_fragments.py`（新增）、`references/provenance-policy.md`、`references/okf-frontmatter.md`、`references/golden-sample.md`、`docs/maintenance-history.md`。
