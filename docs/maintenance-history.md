@@ -204,3 +204,14 @@
 - 策略与回归说明：`references/README.md`、`references/golden-sample.md`、`references/ingest-policy.md`、`references/lint-policy.md`、`references/okf-frontmatter.md`、`references/provenance-policy.md`、`references/schema.md`、`references/review-workflow.md`（新增）、`docs/maintenance-history.md`。
 - 实现：`scripts/ingest_raw.py`、`scripts/lint_wiki.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`scripts/wiki_reviews.py`、`scripts/wiki_sources.py`。
 - 回归测试：`tests/test_citation_scope.py`、`tests/test_evidence_diagnostics.py`、`tests/test_evidence_priority.py`、`tests/test_ingest_raw.py`、`tests/test_lint_reports.py`（新增）、`tests/test_lint_wiki.py`、`tests/test_provenance_search.py`、`tests/test_synthesis.py`、`tests/test_workflow_tools.py`。
+
+## 维护验证记录：2026-11-16
+
+- 发布版本从 `0.2.12` 更新为 `0.2.13`，模板继续通过统一渲染读取版本。
+- 复核记录支持用 `field` 指定 raw 的日期、采集时间与时长标量字段，校验完整字段值；用 `via` 指定同一论断片段中的有效知识页链接，再沿其来源链核对 raw 原文。报告与模板列出可用入口，不自动认定语义支持，不改变原始告警或退出码。
+- 跨页入口限制段落、列表项、表格行与脚注归因范围，拒绝代码、图片、失效锚点、循环及不完整来源链。链接页、传递来源与 raw 元数据纳入复核指纹；规则升级后旧记录需重新导出并核对。
+- 使用项目 `.venv` 执行全量 unittest，248 项通过；项目一致性检查及 `git diff --check` 通过。场景 23 覆盖元数据、跨页路径、依赖失效、分组与只读边界，场景 11 至场景 15 结合完整自动化回归核对。
+- Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10：本地 HTTP URL 成功摄入及失败不落盘、顺带提及暂缓、单篇充分建页、别名跨篇补足与同义复用、冲突双方与来源保留、只读检索及检查、提炼待办。复用的本地验证脚本先因默认摘要不展开冲突而断言失败，显式请求 `--details` 后通过；产品无需调整。最终验证无未解决失败项。
+- 本次未重跑实际知识库的 53 条记录，未声称它们已闭合；库外核验依据仍须入库，日期语义、主张归因与证据支持关系由复核者逐项核对。
+
+本次修改文件：`SKILL.md`、`docs/maintenance-history.md`、`references/golden-sample.md`、`references/lint-policy.md`、`references/provenance-policy.md`、`references/review-workflow.md`、`scripts/lint_wiki.py`、`scripts/wiki_lint_report.py`、`scripts/wiki_provenance.py`、`scripts/wiki_reviews.py`、`tests/test_reviews.py`。

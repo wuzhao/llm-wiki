@@ -722,7 +722,17 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
         if not error:
             documents[relative] = {"metadata": metadata, "body": body, "path": kb_dir / relative,
                                    "body_start_line": content.count("\n", 0, len(content) - len(body)) + 1}
-    provenance = ProvenanceGraph(kb_dir, schema, lambda source, target: resolve_standard_link(source, target, target_index), documents)
+    def resolve_claim_link(source, target, is_wiki):
+        result = (resolve_wikilink(source, target, target_index, schema) if is_wiki
+                  else resolve_standard_link(source, target, target_index))
+        relative = result.get('relative')
+        if relative and fragment_exists(relative, result.get('fragment', ''), target_index):
+            return result
+        return {}
+
+    provenance = ProvenanceGraph(kb_dir, schema,
+        lambda source, target: resolve_standard_link(source, target, target_index), documents,
+        resolve_claim_link=resolve_claim_link)
     for relative, content in content_by_path.items():
         _, metadata, body, error = split_frontmatter(content)
         if error:

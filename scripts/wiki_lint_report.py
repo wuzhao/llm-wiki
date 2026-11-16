@@ -99,6 +99,13 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
     item += f"\n  问题 id：`{finding_id(relative_path, issue)}`"
     if issue.get('sources'):
         item += '\n  来源范围：' + '、'.join(format_issue_location(p) for p in issue['sources'])
+    for via, sources in issue.get('cross_page_sources', {}).items():
+        item += ('\n  跨页复核入口（须核对归因）：' + format_issue_location(via) + ' → '
+                 + '、'.join(format_issue_location(p) for p in sources))
+    for evidence in issue.get('metadata_evidence', []):
+        item += (f"\n  元数据复核入口：{format_issue_location(evidence['path'], evidence['line'])}，"
+                 f"字段 {inline_text(evidence['field'])} = {inline_text(evidence['quote'])}"
+                 + (f"，经 {format_issue_location(evidence['via'])}" if evidence.get('via') else ''))
     for detail in issue.get("details", []):
         item += f"\n  - {detail.get('level', issue['level'])} 主张 {inline_text(detail['claim'])}：{detail['label']}。{detail['action']}"
         item += f"\n    论断上下文：{inline_text(detail['context'])}"
@@ -120,7 +127,9 @@ def review_groups(all_issues):
     groups = defaultdict(list)
     for path, finding in all_issues:
         for detail in finding.get('details', []):
-            key = (path, detail['claim'], detail['kind'], tuple(finding.get('sources', [])))
+            routes = tuple((via, tuple(sources)) for via, sources in
+                           sorted(finding.get('cross_page_sources', {}).items()))
+            key = (path, detail['claim'], detail['kind'], tuple(finding.get('sources', [])), routes)
             groups[key].append((finding, detail))
     if not groups:
         return ''
@@ -131,7 +140,7 @@ def review_groups(all_issues):
               f'其中 {pending_groups} 组待复核，{reviewed} 个主张已有有效复核记录。'
               '分组不代表同一事实，需核对组内每处语境；原始告警数、严重级别与退出码不变。\n\n'
               'Agent 先核对泛指、作者自编结构、翻译候选与已有记录；只有证据缺口、冲突或需要用户取舍的内容进入用户决策清单。\n\n')
-    for (path, claim, kind, sources), rows in groups.items():
+    for (path, claim, kind, sources, routes), rows in groups.items():
         pending = any(not d.get('review') for _, d in rows)
         state = '待复核' if pending else '已复核'
         result += f'<details>\n<summary>{state}：{inline_text(path)}，{inline_text(claim)}，{len(rows)} 处</summary>\n\n'

@@ -2,7 +2,8 @@
 import re
 from collections import defaultdict, deque
 
-from markdown_links import blank, escaped, mask_link_metadata, mask_non_prose
+from markdown_links import (blank, escaped, mask_link_metadata, mask_non_prose,
+                            standard_link_occurrences, wikilink_spans)
 from wiki_metadata import body_sha256, parse_datetime
 from wiki_evidence import EvidenceDocument, EvidenceIndex, claim_literals, claim_text, missing_literals, quoted_literals
 from wiki_sources import document_content_hash, latest_sources, load_documents, source_identity
@@ -96,8 +97,9 @@ def claim_blocks(prose):
 
 
 class ProvenanceGraph:
-    def __init__(self, kb_dir, schema, resolve, documents=None):
+    def __init__(self, kb_dir, schema, resolve, documents=None, resolve_claim_link=None):
         self.schema, self.kb_dir = schema, kb_dir
+        self.resolve_claim_link = resolve_claim_link
         if documents is None:
             self.documents, self.errors = load_documents(
                 kb_dir, [schema["paths"]["raw"], schema["paths"]["wiki"]],
@@ -211,7 +213,34 @@ class ProvenanceGraph:
                 return target
         return None
 
-    def evidence_issues(self, path, text, raw_paths, body_start):
+    def claim_links(self, path, body):
+        """Only actual link uses can grant an explicit cross-page review route."""
+        if self.resolve_claim_link is None:
+            return []
+        prose = mask_non_prose(body)
+        uses = [(at, prose[start:end], False) for at, start, end in standard_link_occurrences(prose)
+                if not (at and prose[at - 1] == '!') and not escaped(prose, at)]
+        uses += [(start - 2, prose[start:end], True) for start, end in wikilink_spans(prose)
+                 if not (start > 2 and prose[start - 3] == '!')]
+        result = []
+        for at, target, is_wiki in uses:
+            resolved = self.resolve_claim_link(path, target, is_wiki)
+            via = resolved.get('relative')
+            roots = tuple(self.schema['paths'][key] + '/' for key in
+                          ('summaries', 'entities', 'concepts', 'analyses', 'hubs'))
+            if not via or not via.startswith(roots) or via == path:
+                continue
+            leaves, seen, cycle = self.walk(via)
+            complete = all(
+                self.entries.get(node)
+                and len(self.entries[node]) == len(self.documents[node]['metadata'].get('sources', []))
+                and all(target in self.documents and not external for _, target, external in self.entries[node])
+                for node in seen - self.raw.keys() if node in self.documents)
+            if leaves and complete and not cycle and path not in seen and seen <= self.documents.keys():
+                result.append((at, via, leaves, seen))
+        return result
+
+    def evidence_issues(self, path, text, raw_paths, body_start, links=()):
         details = self.evidence_index(raw_paths).diagnose(text) if raw_paths else []
         if not details:
             return []
@@ -222,10 +251,15 @@ class ProvenanceGraph:
         line = body.count("\n", 0, body_start + min(detail["start"] for detail in details)) + 1
         level = "🟡" if any(detail["level"] == "🟡" for detail in details) else "🔵"
         label = "数值表达建议: " if level == "🔵" else "数值或引文证据待复核: "
+        routes, dependencies = {}, set(self.walk(path)[1])
+        for at, via, leaves, seen in links:
+            if body_start <= at < body_start + len(text):
+                routes[via] = sorted(leaves)
+                dependencies.update(seen)
         return [issue(level, label + ", ".join(detail["claim"] for detail in details),
                       "候选仅供回查，须核对指标、时间与归因；不自动更正事实", line, True,
                       category="evidence", details=details, sources=sorted(raw_paths),
-                      review_dependencies=sorted(self.walk(path)[1]))]
+                      cross_page_sources=routes, review_dependencies=sorted(dependencies))]
 
     def check(self, path, body, metadata):
         required_roots = tuple(self.schema["paths"][key] + "/" for key in ("summaries", "entities", "concepts", "analyses", "hubs"))
@@ -237,6 +271,7 @@ class ProvenanceGraph:
                 and not re.search(r"\[\^[^\]\n]+\]", prose)):
             return []
         issues = []
+        links = self.claim_links(path, body)
         entries = self.entries.get(path, [])
         page_raw = self.single_raw_summary(path, metadata)
         if not metadata.get("sources"):
@@ -294,7 +329,7 @@ class ProvenanceGraph:
                 # Broken source chains are unavailable evidence, not absent facts.
                 if not raw_paths and keys <= by_id.keys() and claim_literals(segment):
                     issues.append(issue("🟡", "该条引用无法回查 raw 证据", "补全该条引用的来源链；其他论断的可用来源不能代替它", line, True, category="evidence"))
-                issues += self.evidence_issues(path, segment, raw_paths, block_start + cursor)
+                issues += self.evidence_issues(path, segment, raw_paths, block_start + cursor, links)
                 cursor = attribution.end()
             remainder = text[cursor:]
             if (references and claim_literals(remainder)
@@ -303,7 +338,7 @@ class ProvenanceGraph:
             if page_raw:
                 # The exemption only changes citation completeness. Uncited
                 # summary claims still undergo literal lookup in their sole raw.
-                issues += self.evidence_issues(path, remainder, {page_raw}, block_start + cursor)
+                issues += self.evidence_issues(path, remainder, {page_raw}, block_start + cursor, links)
         return issues
 
     def affected(self, sources):
