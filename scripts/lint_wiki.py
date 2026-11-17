@@ -912,16 +912,6 @@ def main():
     for relative, error in document_errors.items():
         if relative not in selected_relatives and relative not in scan_errors:
             all_issues.append((relative, make_issue("🟡", f"来源关系读取失败: {error}", "修复后重新检查来源版本与证据链")))
-    batch_limit = schema["limits"]["max_lint_batch_pages"]
-    if len(markdown_files) > batch_limit:
-        all_issues.append((
-            schema["paths"]["wiki"],
-            make_issue(
-                "🔵",
-                f"本次扫描页面数超过批次阈值: {len(markdown_files)} > {batch_limit}",
-                "后续按 topic 或目录分批执行深度语义检查",
-            ),
-        ))
     repair_enabled = fix_requested and not scan_errors
     plan, all_issues = plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot,
                                     index_relative, repair_enabled, args.strict_sources, all_issues)

@@ -18,7 +18,7 @@
 - `index_sections`：内容目录到 index 分区的映射。
 - `link_roots`：允许知识链接指向的目录范围；嵌套目录按最长路径前缀识别归属。
 - `required_sections`：页面类型必须包含的关键小节。
-- `limits`：页面体积、单批查询页数、搜索片段长度 `max_search_snippet_chars`、lint 批次、陈旧性复核阈值、提炼增量复核周期 `synthesis_review_interval`，以及摄入的 `max_source_bytes` 和 `url_timeout_seconds`。采集字节数和解码后的 UTF-8 正文均受素材大小限制。
+- `limits`：页面体积、单批查询页数、搜索片段长度 `max_search_snippet_chars`、陈旧性复核阈值、提炼增量复核周期 `synthesis_review_interval`，以及摄入的 `max_source_bytes` 和 `url_timeout_seconds`。采集字节数和解码后的 UTF-8 正文均受素材大小限制。
 
 实体与概念只要求保留来源小节，相关概念、示例和应用场景按实际内容添加。不设置正文最少字数，完整短页与空正文分别处理。
 

@@ -226,3 +226,13 @@
 - 项目一致性检查与 `git diff --check` 通过；Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10，场景 11 至场景 15 结合完整自动化回归核对，新增场景 24 覆盖片段分流。本次未读取或修改 phanwiki，未验证其 219 页告警分布。
 
 本次修改文件：`SKILL.md`、`scripts/wiki_evidence.py`、`scripts/wiki_fragments.py`（新增）、`scripts/wiki_provenance.py`、`scripts/impact_wiki.py`、`scripts/wiki_reviews.py`、`tests/test_evidence_priority.py`、`tests/test_source_fragments.py`（新增）、`references/provenance-policy.md`、`references/okf-frontmatter.md`、`references/golden-sample.md`、`docs/maintenance-history.md`。
+
+## 维护验证记录：2026-11-17
+
+- 发布版本从 `0.2.14` 更新为 `0.2.15`，模板继续通过统一渲染读取版本。
+- 移除 lint 扫描页数阈值、必填配置校验与超限告警，同步 schema 和扩容策略说明。扫描页数保留为统计信息。
+- 临时 219 页知识库完整扫描无告警，`--fail-on any` 返回 0，文件快照保持不变。
+- 使用项目 `.venv` 执行全量 unittest，263 项通过；项目一致性检查与 `git diff --check` 通过。
+- Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10：本地 HTTP 摄入及失败不落盘、顺带提及暂缓、单篇充分建页、别名跨篇补足与同义复用、冲突双方与来源保留，以及只读检索和检查。场景 11 至场景 15 结合完整自动化回归核对，无未解决失败项。
+
+本次修改文件：`SKILL.md`、`docs/maintenance-history.md`、`references/schema.json`、`references/schema.md`、`references/scalability-policy.md`、`scripts/wiki_config.py`、`scripts/lint_wiki.py`。
