@@ -809,7 +809,7 @@ def main():
     parser.add_argument("--report-page", nargs="+", help="Show details for these KB-relative paths; does not limit checks or fixes")
     parser.add_argument("--report-category", choices=("evidence", "citation", "other"),
                         help="Filter displayed details only; exit status still covers every finding")
-    parser.add_argument("--review-file", help="Read explicit semantic review records from JSON; never changes severity")
+    parser.add_argument("--review-file", help="Read semantic reviews; valid supported records lower unlocated evidence to advisory")
     parser.add_argument("--review-template", help="Export current review records as JSON outside the knowledge base")
     parser.add_argument("--fail-on", choices=("error", "warning", "any"),
                         help="Exit 1 when unresolved issues meet this severity threshold")

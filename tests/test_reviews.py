@@ -32,7 +32,7 @@ class ReviewTests(unittest.TestCase):
                       reviewed_at='2026-11-08T12:00:00Z', evidence=[{'path': 'raw/a.md', 'quote': 'one person succeeded'}])
         return state, record
 
-    def test_export_is_pending_and_reuse_does_not_change_severity(self):
+    def test_export_is_pending_and_supported_unlocated_is_advisory(self):
         state, findings = self.fixture()
         data, stale = annotate_reviews(findings, state, [], 'rules-v1')
         self.assertEqual(data['records'][0]['status'], 'pending')
@@ -43,8 +43,9 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(stale, 0)
         result = build_report(findings, 1)
         self.assertIn('0 组待复核，1 个主张已有有效复核记录', result.text)
-        self.assertEqual(result.severity_counts['🟡'], 1)
-        self.assertIn('🟡', result.unresolved_levels)
+        self.assertEqual(result.severity_counts['🔵'], 1)
+        self.assertNotIn('🟡', result.unresolved_levels)
+        self.assertIn('1 个未定位主张', result.text)
 
     def test_page_raw_intermediary_rules_or_quote_change_invalidates_review(self):
         for changed in ('wiki/a.md', 'raw/a.md', 'wiki/summary.md', 'rules', 'quote', 'identity', 'read-error'):
@@ -60,6 +61,7 @@ class ReviewTests(unittest.TestCase):
                 _, stale = annotate_reviews(findings, state, [approved], rules)
                 self.assertEqual(stale, 1)
                 self.assertNotIn('review', findings[0][1]['details'][0])
+                self.assertEqual(findings[0][1]['level'], '🟡')
 
     def test_records_require_attribution_reason_evidence_and_unique_ids(self):
         _, approved = self.approved()

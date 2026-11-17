@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 
+from wiki_review_policy import review_completed
+
 
 @dataclass
 class LintReport:
@@ -33,8 +35,8 @@ def finding_id(path, finding):
 
 def review_counts(all_issues):
     details = [d for _, finding in all_issues for d in finding.get('details', [])]
-    reviewed = sum(bool(d.get('review')) for d in details)
-    completed = sum(bool(f.get('details')) and all(d.get('review') for d in f['details'])
+    reviewed = sum(review_completed(d) for d in details)
+    completed = sum(bool(f.get('details')) and all(review_completed(d) for d in f['details'])
                     for _, f in all_issues)
     return len(details), reviewed, completed
 
@@ -113,7 +115,16 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
             item += f"\n    复核 id：`{detail['review_id']}`"
         if detail.get('review'):
             review = detail['review']
-            item += f"\n    已复核（{inline_text(review['status'])}）：{inline_text(review['reason'])}；复核者 {inline_text(review['reviewer'])}"
+            state = "待人工确认" if review["status"] == "proposed-supported" else "已复核"
+            item += f"\n    {state}（{inline_text(review['status'])}）：{inline_text(review['reason'])}；复核者 {inline_text(review['reviewer'])}"
+            for key, label in (("source_values", "原文数值"), ("derivation", "推导算式"),
+                               ("approximation_span", "近似跨度")):
+                if review.get(key):
+                    item += f"\n    {label}：{inline_text(review[key])}"
+            if review.get('human_confirmation'):
+                confirmation = review['human_confirmation']
+                item += (f"\n    人工确认：{inline_text(confirmation['reviewer'])}，"
+                         f"{inline_text(confirmation['confirmed_at'])}")
         for candidate in detail["candidates"]:
             item += (f"\n    - 原文候选 {inline_text(candidate['literal'])}，"
                      f"{format_issue_location(candidate['path'], candidate['line'])}，列 {candidate['column']}："
@@ -133,15 +144,15 @@ def review_groups(all_issues):
             groups[key].append((finding, detail))
     if not groups:
         return ''
-    reviewed = sum(bool(d.get('review')) for rows in groups.values() for _, d in rows)
+    reviewed = sum(review_completed(d) for rows in groups.values() for _, d in rows)
     total = sum(map(len, groups.values()))
-    pending_groups = sum(any(not d.get('review') for _, d in rows) for rows in groups.values())
+    pending_groups = sum(any(not review_completed(d) for _, d in rows) for rows in groups.values())
     result = (f'### Agent 复核工作台\n\n{total} 个主张按同页、同表达、同诊断与同来源范围合为 {len(groups)} 组；'
               f'其中 {pending_groups} 组待复核，{reviewed} 个主张已有有效复核记录。'
-              '分组不代表同一事实，需核对组内每处语境；原始告警数、严重级别与退出码不变。\n\n'
+              '分组不代表同一事实，需核对组内每处语境；原始告警数不变，有效 supported 未定位主张降为蓝色。\n\n'
               'Agent 先核对泛指、作者自编结构、翻译候选与已有记录；只有证据缺口、冲突或需要用户取舍的内容进入用户决策清单。\n\n')
     for (path, claim, kind, sources, routes), rows in groups.items():
-        pending = any(not d.get('review') for _, d in rows)
+        pending = any(not review_completed(d) for _, d in rows)
         state = '待复核' if pending else '已复核'
         result += f'<details>\n<summary>{state}：{inline_text(path)}，{inline_text(claim)}，{len(rows)} 处</summary>\n\n'
         result += rows[0][1]['label'] + '。\n\n'
@@ -157,7 +168,7 @@ def format_categories(items, level=None):
         selected = [item for kind, item in items if kind == category]
         if selected:
             if category == "evidence" and level == "🔵":
-                title = "证据表达建议"
+                title = "证据表达建议与已复核未定位主张"
             result += f"\n#### {title} ({len(selected)})\n\n" + "\n".join(selected) + "\n"
     return result
 
@@ -170,7 +181,7 @@ def diagnostic_summary(all_issues):
         return ""
     report = ("### 证据诊断概览\n\n以下按未匹配的主张计数，一条告警可包含多个主张；不增加告警总数。"
               "分类仅帮助安排复核，候选未定位或口径差异均不能据此判为事实正确。\n\n"
-              "| 诊断 | 主张数 | 🟡 待复核 | 🔵 建议 |\n| ---- | -----: | -------: | ------: |\n")
+              "| 诊断 | 主张数 | 🟡 待复核 | 🔵 建议或已复核 |\n| ---- | -----: | -------: | ------: |\n")
     for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
         report += f"| {label} | {count} | {levels[label, '🟡']} | {levels[label, '🔵']} |\n"
     return report + "\n"
@@ -219,11 +230,11 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix
         report += f" / 可自动修复 {len(auto_fixed)}（未写入）\n\n" if show_repairs else "\n\n"
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
-    report += f"🔵 轻微: {severity_counts['🔵']} 个（表达或架构建议）\n\n"
+    report += f"🔵 轻微: {severity_counts['🔵']} 个（建议或已复核未定位主张）\n\n"
     total, reviewed, completed = review_counts(all_issues)
     report += (f'证据主张 {total} 个：已有有效复核记录 {reviewed} 个，仍待复核 {total - reviewed} 个。\n'
                f'原始告警 {len(all_issues)} 条，其中 {completed} 条证据告警的所有候选均已复核；'
-               '部分复核仍计入待办，其他类别须另行处理。复核不改变严重级别和退出码。\n\n')
+               '部分复核与提议仍计入待办，其他类别须另行处理。有效 supported 未定位主张降为蓝色，退出码按调整后的级别计算。\n\n')
     unresolved = ({level for level, items in manual.items() if items} if write_enabled
                   else {issue['level'] for _, issue in all_issues})
     if not details:

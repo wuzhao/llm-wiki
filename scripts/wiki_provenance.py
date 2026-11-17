@@ -258,6 +258,7 @@ class ProvenanceGraph:
             return []
         body = self.documents[path]["body"]
         for detail in details:
+            detail["review_context"] = text
             detail["line"] = (body.count("\n", 0, body_start + detail["start"])
                               + self.documents[path].get("body_start_line", 1))
         line = body.count("\n", 0, body_start + min(detail["start"] for detail in details)) + 1

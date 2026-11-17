@@ -23,7 +23,7 @@
 
 ## 第 3 步：填写已经完成的复核
 
-保留模板记录的 id、page、claim、kind、context、line、dependencies 和 rules，仅填写复核字段。下面只是需要填写的字段示例，必须将占位内容替换为实际核对结果，不能把它当作完整记录导入：
+保留模板记录的 id、page、claim、kind、context、line、dependencies、rules、review_policy 和 category，仅填写复核字段。下面只是需要填写的字段示例，必须将占位内容替换为实际核对结果，不能把它当作完整记录导入：
 
 ```json
 {
@@ -36,6 +36,8 @@
   ]
 }
 ```
+
+上述 supported 示例适用于 direct 类。derived、approximate 类自动复核必须使用 proposed-supported，预填 source_values 和 derivation 或 approximation_span；缺少字段不能提交提议。Phan 逐条核验后改为 supported，并填写 human_confirmation 的 reviewer 与 confirmed_at，疑难时交用户裁决。具体分类与字段见 [增量分类与人工确认](provenance-policy.md#增量分类与人工确认)。
 
 泛指或作者自行组织条目可以使用对应状态并写清理由。缺材料、真实冲突或尚未核对的候选保持 pending。已有 Markdown 复核报告只能作为线索，仍需确认当前页面与原文后填写。
 
@@ -58,7 +60,7 @@
     --review-file "/outside-kb/reviews-new.json" --fail-on warning
 ```
 
-摘要会分别显示原始告警数、已有有效记录的主张数和仍待复核数。证据主张全部复核也可能返回 1，因为严格退出码继续使用原始诊断级别；这不表示记录没有加载。使用 `--details` 查看逐条理由与原文。
+摘要会分别显示原始告警数、已有有效记录的主张数和仍待复核数。提议继续计入待复核。有效 supported 的未定位主张降为蓝色，不再单独触发 `--fail-on warning`；其他黄色或红色问题仍可能使全部证据复核后的检查返回 1。使用 `--details` 查看逐条理由与原文。
 
 ## 第 5 步：后续检查继续复用
 
