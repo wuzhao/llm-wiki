@@ -746,10 +746,11 @@ class LintWikiTests(unittest.TestCase):
 
     def test_anchor_cache_avoids_repeated_target_reads(self):
         from unittest.mock import patch
-        from lint_wiki import scan_links, heading_keys
+        from lint_wiki import scan_links
+        from wiki_links import heading_keys
         self.write_concept("alpha", "## Section\n\n## Section\n")
         index = build_target_index(self.kb, SCHEMA)
-        with patch("lint_wiki.heading_keys", wraps=heading_keys) as reader:
+        with patch("wiki_links.heading_keys", wraps=heading_keys) as reader:
             _, issues, _ = scan_links("wiki/concepts/beta.md",
                 "[[concepts/alpha#section]]\n[[concepts/alpha#section-1]]", index, SCHEMA)
             self.assertEqual(issues, [])

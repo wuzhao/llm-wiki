@@ -7,16 +7,43 @@ import sys
 from pathlib import Path
 
 from wiki_config import SchemaError, is_knowledge_page, load_schema, validate_structure
+from wiki_provenance import prose_blocks
 from wiki_sources import load_documents
 
 
+def normalize_term(value):
+    return ' '.join(value.split()).casefold()
+
+
+def first_term_span(text, terms):
+    """Locate normalized whitespace/case matches while preserving source offsets."""
+    folded = text.casefold()
+    matches = [match for term in terms
+               if (match := re.search(r'\s+'.join(re.escape(word) for word in term.split()), folded))]
+    if not matches:
+        return None
+    match = min(matches, key=lambda value: (value.start(), -value.end()))
+    if len(text) == len(folded):
+        return match.span()
+    # Case folding may expand a character (for example ß to ss).
+    offset = start = 0
+    for index, char in enumerate(text):
+        end = offset + len(char.casefold())
+        if offset <= match.start() < end:
+            start = index
+        if end >= match.end():
+            return start, index + 1
+        offset = end
+
+
 def search_documents(documents, terms, schema, document_type=None, tag=None, domain=None):
+    terms = {normalize_term(term) for term in terms if normalize_term(term)}
     expanded = set(terms)
     for document in documents.values():
         metadata = document["metadata"]
         aliases = metadata.get("aliases", [])
         names = [metadata.get("title", ""), *(aliases if isinstance(aliases, list) else [])]
-        names = {name.casefold() for name in names if isinstance(name, str) and name}
+        names = {normalize_term(name) for name in names if isinstance(name, str) and normalize_term(name)}
         if names & set(terms):
             expanded.update(names)
     results = []
@@ -32,18 +59,31 @@ def search_documents(documents, terms, schema, document_type=None, tag=None, dom
             continue
         title = metadata.get("title") or Path(path).stem
         metadata_original = json.dumps(metadata, ensure_ascii=False, default=str)
-        metadata_text = metadata_original.casefold()
+        metadata_text = normalize_term(metadata_original)
         body = document["body"]
-        matched_body = {term for term in expanded if term in body.casefold()}
+        matched_body = set()
+        span = None
+        for offset, block in prose_blocks(body):
+            normalized = normalize_term(block)
+            found = {term for term in expanded if term in normalized}
+            if found and span is None:
+                start, end = first_term_span(block, found)
+                span = offset + start, offset + end
+            matched_body.update(found)
         matched_metadata = {term for term in expanded if term in metadata_text}
         matched = matched_body | matched_metadata
         if not matched:
             continue
-        lines = body.splitlines()
-        line_index = next((i for i, line in enumerate(lines) if any(term in line.casefold() for term in matched_body)), None)
-        snippet = lines[line_index].strip() if line_index is not None else metadata_original
+        if span is not None:
+            line_index = body.count("\n", 0, span[0])
+            left = body.rfind("\n", 0, span[0]) + 1
+            right = body.find("\n", span[1])
+            snippet = " ".join(body[left:right if right >= 0 else len(body)].split())
+        else:
+            line_index, snippet = None, metadata_original
         snippet_limit = schema["limits"]["max_search_snippet_chars"]
-        first_match = min((snippet.casefold().find(term) for term in matched if term in snippet.casefold()), default=0)
+        snippet_span = first_term_span(snippet, matched)
+        first_match = snippet_span[0] if snippet_span else 0
         start = max(0, first_match - snippet_limit // 2)
         snippet = snippet[start:start + snippet_limit]
         results.append({"path": path, "title": title, "type": metadata.get("type"), "status": metadata.get("status", "stable"),
@@ -95,7 +135,7 @@ def main():
         limit = args.limit if args.limit is not None else schema["limits"]["max_query_read_pages"]
         if limit <= 0 or args.offset < 0:
             parser.error("--limit 必须为正整数，--offset 不得为负数")
-        terms = {term.casefold() for value in args.query for term in re.findall(r"\S+", value)}
+        terms = {normalize_term(value) for value in args.query if normalize_term(value)}
         if not terms:
             parser.error("查询词不能为空")
         session = SearchSession(base, schema, terms, args.document_type, args.tag, args.domain)

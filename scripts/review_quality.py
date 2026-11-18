@@ -4,13 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
+from wiki_config import load_schema
 
-MAX_FALSE_SUPPORT_RATE = 0.05
-WEEKLY_ADMISSION_THRESHOLD = 20
+
 AUDIT_CATEGORIES = ('derived', 'approximate')
 
 
-def audit_samples(samples, reviewer=None, *, weekly_pending=0):
+def audit_samples(samples, reviewer=None, *, weekly_pending=0, schema=None):
     """Reviewer(sample) returns a status; count proposals as false support too.
 
     A sample supplies id, category, claim, source, quote and flaw. Its quote must
@@ -21,6 +21,8 @@ def audit_samples(samples, reviewer=None, *, weekly_pending=0):
         raise ValueError('负样本必须为 JSON 数组')
     if type(weekly_pending) is not int or weekly_pending < 0:
         raise ValueError('weekly_pending 必须是非负整数')
+    limits = (schema if schema is not None else load_schema())['limits']
+    max_pct = limits['max_review_false_support_pct']
     counts = {category: {'total': 0, 'false_supported': 0} for category in AUDIT_CATEGORIES}
     seen = set()
     for sample in samples:
@@ -40,9 +42,9 @@ def audit_samples(samples, reviewer=None, *, weekly_pending=0):
         row['false_supported'] += status in ('supported', 'proposed-supported')
     for row in counts.values():
         row['false_support_rate'] = row['false_supported'] / row['total'] if row['total'] else None
-        row['passed'] = row['total'] > 0 and row['false_support_rate'] <= MAX_FALSE_SUPPORT_RATE
-    admission = weekly_pending > WEEKLY_ADMISSION_THRESHOLD
-    return {'categories': counts, 'threshold': MAX_FALSE_SUPPORT_RATE,
+        row['passed'] = row['total'] > 0 and row['false_supported'] * 100 <= row['total'] * max_pct
+    admission = weekly_pending > limits['review_weekly_admission_threshold']
+    return {'categories': counts, 'threshold': max_pct / 100,
             'admission_required': admission,
             'automatic_proposals_allowed': not admission or all(row['passed'] for row in counts.values())}
 

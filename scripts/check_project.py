@@ -6,7 +6,7 @@ import re
 import urllib.parse
 from pathlib import Path
 
-from lint_wiki import heading_keys
+from wiki_links import heading_keys
 from markdown_links import mask_link_metadata, mask_non_prose, standard_link_spans, unescape_target
 from wiki_config import MARKDOWN_TEMPLATE_RE, SchemaError, infer_document_type, load_schema
 from wiki_metadata import split_frontmatter

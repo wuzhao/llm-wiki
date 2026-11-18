@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 
 from markdown_links import (blank, escaped, mask_link_metadata, mask_non_prose,
                             standard_link_occurrences, wikilink_spans)
+from wiki_links import fragment_exists, resolve_standard_link, resolve_wikilink
 from wiki_metadata import body_sha256, parse_datetime
 from wiki_fragments import fragment_changes
 from wiki_evidence import EvidenceDocument, EvidenceIndex, claim_literals, claim_text, missing_literals, quoted_literals
@@ -373,3 +374,32 @@ class ProvenanceGraph:
                     queue.append(parent)
         return [{"path": path, "action": "review-snapshot" if path.startswith(self.schema["paths"]["analyses"] + "/") else "update-or-review"}
                 for path in sorted(seen - seeds)]
+
+
+def check_provenance(kb_dir, schema, target_index, documents, content_by_path, parsed_by_path):
+    """Check scoped pages against the complete source graph using their actual parsed text."""
+    for relative, (_, metadata, body, error) in parsed_by_path.items():
+        if not error:
+            content = content_by_path[relative]
+            documents[relative] = {"metadata": metadata, "body": body, "path": kb_dir / relative,
+                                   "body_start_line": content.count("\n", 0, len(content) - len(body)) + 1}
+
+    def resolve_claim_link(source, target, is_wiki):
+        result = (resolve_wikilink(source, target, target_index, schema) if is_wiki
+                  else resolve_standard_link(source, target, target_index))
+        relative = result.get('relative')
+        if relative and fragment_exists(relative, result.get('fragment', ''), target_index):
+            return result
+        return {}
+
+    provenance = ProvenanceGraph(kb_dir, schema,
+        lambda source, target: resolve_standard_link(source, target, target_index), documents,
+        resolve_claim_link=resolve_claim_link)
+    for relative, (_, metadata, body, error) in parsed_by_path.items():
+        if error:
+            continue
+        body_offset = documents[relative]["body_start_line"] - 1
+        for issue in provenance.check(relative, body, metadata):
+            if issue.pop("_body_line", False):
+                issue["line"] += body_offset
+            yield relative, issue

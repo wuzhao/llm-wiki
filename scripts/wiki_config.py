@@ -22,7 +22,7 @@ REQUIRED_LIMIT_KEYS = {
     "max_page_lines", "max_page_bytes", "max_page_h2",
     "max_query_read_pages", "max_search_snippet_chars", "max_log_bytes", "review_after_days",
     "max_source_bytes", "url_timeout_seconds",
-    "synthesis_review_interval",
+    "synthesis_review_interval", "max_review_false_support_pct", "review_weekly_admission_threshold",
 }
 
 
@@ -204,9 +204,13 @@ def load_schema(schema_path=None):
         raise SchemaError("limits 必须是非空对象")
     if REQUIRED_LIMIT_KEYS - limits.keys():
         raise SchemaError("limits 缺少字段: " + ", ".join(sorted(REQUIRED_LIMIT_KEYS - limits.keys())))
+    pct = limits["max_review_false_support_pct"]
+    if type(pct) is not int or not 0 <= pct <= 100:
+        raise SchemaError("max_review_false_support_pct 必须为 0 至 100 的整数")
     invalid_limits = sorted(
         key for key, value in limits.items()
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0
+        if key != "max_review_false_support_pct"
+        and (not isinstance(value, int) or isinstance(value, bool) or value <= 0)
     )
     if invalid_limits:
         raise SchemaError(f"limits 必须是正整数: {', '.join(invalid_limits)}")

@@ -240,7 +240,8 @@ Lint prints a compact summary by default. Use `--details` for complete diagnosti
 | [Synthesis policy](references/synthesis-policy.md) | Page criteria, deferred topics, and incremental review |
 | [Preflight](references/preflight.md) | Workspace, skill, knowledge base, and tool paths |
 | [Provenance and updates](references/provenance-policy.md) | Citations, source versions, and change propagation |
-| [Lint policy](references/lint-policy.md) | Write checks and safe repair scope |
+| [Lint policy](references/lint-policy.md) | Diagnostics, reports, and safe repair scope |
+| [Review workflow](references/review-workflow.md) | Evidence grading, human confirmation, and review_quality.py quality audits |
 | [Page templates](templates/) | Generated page structures |
 | [AGENTS.md](AGENTS.md) | Repository development rules |
 | [Golden Sample](references/golden-sample.md) | Minimum workflow regressions |

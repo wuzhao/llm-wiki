@@ -236,3 +236,18 @@
 - Golden Sample 在独立临时知识库完成场景 2、场景 3、场景 4、场景 9 和场景 10：本地 HTTP 摄入及失败不落盘、顺带提及暂缓、单篇充分建页、别名跨篇补足与同义复用、冲突双方与来源保留，以及只读检索和检查。场景 11 至场景 15 结合完整自动化回归核对，无未解决失败项。
 
 本次修改文件：`SKILL.md`、`docs/maintenance-history.md`、`references/schema.json`、`references/schema.md`、`references/scalability-policy.md`、`scripts/wiki_config.py`、`scripts/lint_wiki.py`。
+
+## 第三轮优化复核：2026-11-18
+
+- [前两轮实施与验证记录](optimization-validation.md)保留基线、合成知识库规模与当时的性能数据。
+- 复核指纹覆盖来源图、跨页链接与锚点。索引和页面维护检查独立于指纹。新版复核记录重新导出时补齐标准字段，保留兼容记录的原始身份。
+- 短语支持段内换行，搜索摘要折叠为单行。只读 lint 在同一页面的检查与来源图之间复用解析结果，同一来源的元数据证据只定位一次。
+- 本机知识库只读对比覆盖默认的 `wiki` 与 `raw`，共 219 页、449 条告警（🔴 0、🟡 397、🔵 52）。按前两轮的 `--lint-dirs wiki` 范围另行对比，仍为 135 页、374 条告警。两种范围的前后报告均仅复核 ID 有别，知识库 Markdown 文件哈希一致。本次没有加载另一设备的 228 条原始复核记录。
+- 使用 `0.2.16` 和第二轮实现分别导出的派生、近似记录验证 CLI 兼容性，另以合成记录覆盖旧协议。经确认的记录均可复用，来源修改后均回到待复核。281 项单元测试、项目一致性检查、Git 空白检查和 Golden Sample 场景 2、3、4、9、10 全部通过。
+
+### 本轮修改文件
+
+- 检查器与搜索（`scripts/`）：`check_project.py`、`lint_wiki.py`、`search_wiki.py`、`wiki_links.py`、`wiki_provenance.py`、`wiki_reviews.py`、`wiki_rule_fingerprint.py`。
+- 规则与兼容配置（`references/`）：`lint-policy.md`、`query-policy.md`、`review-workflow.md`、`review-compatibility.json`。
+- 验证记录（`docs/`）：`maintenance-history.md`、`optimization-validation.md`。
+- 回归测试（`tests/`）：`test_lint_wiki.py`、`test_parse_cache.py`、`test_provenance_search.py`、`test_reviews.py`、`test_rule_fingerprint.py`。

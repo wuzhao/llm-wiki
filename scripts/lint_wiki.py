@@ -36,11 +36,11 @@ from wiki_scan import load_snapshot
 from wiki_lint_report import build_report
 from wiki_reviews import annotate_reviews, checker_fingerprint, load_reviews
 from markdown_links import mask_non_prose, standard_link_occurrences, standard_link_spans, wikilink_spans, unescape_target
-from wiki_links import build_target_index, is_allowed_target, resolve_standard_link, resolve_wikilink
+from wiki_links import build_target_index, fragment_exists, is_allowed_target, resolve_standard_link, resolve_wikilink
 from wiki_metadata import body_sha256, parse_datetime, split_frontmatter
 from wiki_sources import latest_sources, source_identity, walk_visible_files
 from synthesis_wiki import review_fingerprint, validate_synthesis
-from wiki_provenance import ProvenanceGraph
+from wiki_provenance import check_provenance
 
 
 def make_issue(level, problem, action="", line=None, is_auto=False):
@@ -86,9 +86,11 @@ def h1_title(body, filepath):
     return Path(filepath).stem
 
 
-def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=False):
+def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=False, *, parsed=None):
     relative_path = Path(filepath).resolve().relative_to(Path(kb_dir).resolve()).as_posix()
-    frontmatter, metadata, body, error = split_frontmatter(content)
+    frontmatter, metadata, body, error = parsed if parsed is not None else split_frontmatter(content)
+    # Repairs only replace top-level keys. Preserve the actual metadata for provenance.
+    metadata = metadata.copy()
     issues = []
 
     if relative_path == schema["paths"]["index"]:
@@ -251,45 +253,6 @@ def check_raw_snapshot(relative_path, metadata, body, kb_dir, schema):
         except (OSError, ValueError, SchemaError) as exc:
             issues.append(make_issue("🔴", f"原始响应快照不可用: {exc}", "恢复原始快照或重新摄入新版本", line=1))
     return issues
-
-
-def heading_keys(filepath, content=None):
-    if not filepath or Path(filepath).suffix.casefold() != ".md":
-        return set(), set()
-    if content is None:
-        try:
-            content = Path(filepath).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return set(), set()
-    exact = set()
-    slugs = set()
-    content = mask_non_prose(content)
-    counts = defaultdict(int)
-    for match in re.finditer(r"^#{1,6}\s+(.+?)(?:\s+#+)?$", content, re.MULTILINE):
-        heading = match.group(1).strip()
-        exact.add(heading.casefold())
-        slug = re.sub(r"[^\w\-\u4e00-\u9fff ]", "", heading.casefold())
-        slug = re.sub(r"[\s\-]+", "-", slug).strip("-")
-        count = counts[slug]
-        counts[slug] += 1
-        slugs.add(f"{slug}-{count}" if count else slug)
-    blocks = set(re.findall(r"\^([A-Za-z0-9_-]+)\s*$", content, re.MULTILINE))
-    return exact | blocks, slugs
-
-
-def fragment_exists(relative_target, fragment, target_index):
-    if not fragment:
-        return True
-    filepath = target_index["by_relative"].get(relative_target)
-    if not filepath:
-        return False
-    cache = target_index["heading_cache"]
-    if relative_target not in cache:
-        content = target_index.get("content_cache", {}).get(relative_target)
-        cache[relative_target] = heading_keys(filepath, content)
-    exact, slugs = cache[relative_target]
-    normalized = fragment.lstrip("^").casefold()
-    return normalized in exact or normalized in slugs
 
 
 def line_number(content, offset):
@@ -614,17 +577,22 @@ def check_index_consistency(content, pages, target_index, schema, source_relativ
 def create_or_append_log(kb_dir, schema, checked, issues, fixed, severity_counts):
     log_path, template = prepare_log(kb_dir, schema)
     now = datetime.datetime.now(datetime.timezone.utc)
-    descriptor = os.open(log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "a", encoding="utf-8") as log_file:
+    descriptor = os.open(log_path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "a+b") as log_file:
         fcntl.flock(log_file, fcntl.LOCK_EX)
         if os.fstat(log_file.fileno()).st_size == 0:
-            log_file.write(template)
-        log_file.write(f"\n## [{now:%Y-%m-%d}] lint | mode=fix\n\n")
-        log_file.write(f"- Checked: {checked} files\n")
-        log_file.write(
+            log_file.write(template.encode("utf-8"))
+            log_file.flush()
+        size = os.fstat(log_file.fileno()).st_size
+        tail = os.pread(log_file.fileno(), min(size, 4), max(0, size - 4)).replace(b"\r\n", b"\n")
+        separator = b"" if tail.endswith(b"\n\n") else b"\n" if tail.endswith(b"\n") else b"\n\n"
+        entry = (
+            f"## [{now:%Y-%m-%d}] lint | mode=fix\n\n"
+            f"- Checked: {checked} files\n"
             f"- Issues: {issues} (严重 {severity_counts['🔴']} / 中等 {severity_counts['🟡']} / 轻微 {severity_counts['🔵']})\n"
+            f"- Auto-fixed: {fixed}\n"
         )
-        log_file.write(f"- Auto-fixed: {fixed}\n")
+        log_file.write(separator + entry.encode("utf-8"))
         log_file.flush()
         os.fsync(log_file.fileno())
 
@@ -647,6 +615,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
     outbound_by_source = defaultdict(set)
     metadata_by_path = {}
     content_by_path = {}
+    parsed_by_path = {}
     planned_writes = {}
 
     for filepath in markdown_files:
@@ -659,7 +628,8 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
             continue
 
         original = content
-        _, _, _, original_error = split_frontmatter(content)
+        parsed = snapshot.parse(original)
+        original_error = parsed[3]
         is_log = relative.startswith(schema["paths"]["logs"] + "/")
         page_writable = repair_enabled and not is_log and original_error in ("", "缺少 YAML frontmatter")
         content, frontmatter_issues, metadata, body = check_and_fix_frontmatter(
@@ -668,22 +638,29 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
             kb_dir,
             schema,
             apply_fixes=page_writable,
+            parsed=parsed,
         )
         if content != original:
-            _, proposed_metadata, _, proposed_error = split_frontmatter(content)
+            proposed = snapshot.parse(content)
+            _, proposed_metadata, _, proposed_error = proposed
             if proposed_error or proposed_metadata != metadata:
                 # Anchors/aliases can connect a repaired field to unknown fields.
                 content = original
-                _, metadata, body, _ = split_frontmatter(original)
+                _, metadata, body, _ = parsed
                 for issue in frontmatter_issues:
                     issue["is_auto"] = False
                 frontmatter_issues.append(make_issue("🔴", "修复会破坏 YAML 引用或改变其他字段", "保留原文，请人工修复", line=1))
+            else:
+                parsed = proposed
+        before_links = content
         content, link_issues, resolved_targets = scan_links(relative, content, target_index, schema, apply_fixes=page_writable)
-        _, parsed_metadata, parsed_body, parse_error = split_frontmatter(content)
-        if not parse_error:
-            parsed_metadata.update(metadata)
-            metadata = parsed_metadata
-            body = parsed_body
+        if content != before_links:
+            parsed = snapshot.parse(content)
+            if not parsed[3]:
+                metadata = {**parsed[1], **metadata}
+        parsed_by_path[relative] = parsed
+        if not parsed[3]:
+            body = parsed[2]
         metadata_by_path[relative] = metadata
         content_by_path[relative] = content
         text_cache[relative] = content
@@ -717,31 +694,7 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
         if page_writable and content != original:
             planned_writes[relative] = content
 
-    for relative, content in content_by_path.items():
-        _, metadata, body, error = split_frontmatter(content)
-        if not error:
-            documents[relative] = {"metadata": metadata, "body": body, "path": kb_dir / relative,
-                                   "body_start_line": content.count("\n", 0, len(content) - len(body)) + 1}
-    def resolve_claim_link(source, target, is_wiki):
-        result = (resolve_wikilink(source, target, target_index, schema) if is_wiki
-                  else resolve_standard_link(source, target, target_index))
-        relative = result.get('relative')
-        if relative and fragment_exists(relative, result.get('fragment', ''), target_index):
-            return result
-        return {}
-
-    provenance = ProvenanceGraph(kb_dir, schema,
-        lambda source, target: resolve_standard_link(source, target, target_index), documents,
-        resolve_claim_link=resolve_claim_link)
-    for relative, content in content_by_path.items():
-        _, metadata, body, error = split_frontmatter(content)
-        if error:
-            continue
-        body_offset = content.count("\n", 0, len(content) - len(body))
-        for issue in provenance.check(relative, body, metadata):
-            if issue.pop("_body_line", False):
-                issue["line"] += body_offset
-            all_issues.append((relative, issue))
+    all_issues.extend(check_provenance(kb_dir, schema, target_index, documents, content_by_path, parsed_by_path))
 
     eligible_pages = {
         path for path in metadata_by_path
@@ -777,7 +730,8 @@ def plan_repairs(kb_dir, schema, markdown_files, target_index, snapshot, index_r
     if index_content is not None and missing_index_pages:
         new_index_content, index_issues = add_index_entries(index_content, missing_index_pages, metadata_by_path, schema)
         all_issues.extend((index_relative, issue) for issue in index_issues)
-        index_error = split_frontmatter(index_content)[3]
+        index_parsed = parsed_by_path.get(index_relative) or snapshot.parse(index_content)
+        index_error = index_parsed[3]
         if index_error:
             for issue in index_issues:
                 issue["is_auto"] = False

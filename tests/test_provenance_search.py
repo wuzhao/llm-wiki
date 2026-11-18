@@ -33,6 +33,46 @@ class ProvenanceSearchTests(unittest.TestCase):
             args = ('--details', *args)
         return subprocess.run([sys.executable, str(ROOT / 'scripts' / script), str(self.kb), *args], capture_output=True, text=True)
 
+    def test_multiword_aliases_keep_phrase_and_keyword_queries_distinct(self):
+        self.write('wiki/concepts/term.md', '定义。', aliases=['Cache   Invalidation', '缓存失效', '  '])
+        self.write('wiki/concepts/related.md', '缓存失效影响一致性。')
+        self.write('wiki/concepts/unrelated.md', 'cache storage only')
+        self.write('wiki/concepts/spaced.md', 'CACHE  INVALIDATION matters')
+        before = snapshot(self.kb)
+        result = self.command('search_wiki.py', '  cache   invalidation  ')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertIn('缓存失效', data['expanded_terms'])
+        self.assertEqual({r['path'] for r in data['results']}, {
+            'wiki/concepts/term.md', 'wiki/concepts/related.md', 'wiki/concepts/spaced.md'})
+        words = json.loads(self.command('search_wiki.py', 'cache', 'invalidation').stdout)
+        self.assertIn('wiki/concepts/unrelated.md', {r['path'] for r in words['results']})
+        reverse = json.loads(self.command('search_wiki.py', '缓存失效').stdout)
+        self.assertIn('cache invalidation', reverse['expanded_terms'])
+        self.assertEqual(snapshot(self.kb), before)
+
+    def test_phrase_snippet_locates_long_prefix_and_wrapped_whitespace(self):
+        self.write('wiki/concepts/long.md', '前缀' * 400 + 'cache  invalidation works')
+        self.write('wiki/concepts/wrapped.md', '说明。\n\ncache\n  invalidation works')
+        result = json.loads(self.command('search_wiki.py', 'cache invalidation').stdout)
+        self.assertEqual(result['total'], 2)
+        for item in result['results']:
+            self.assertIn('cache invalidation', item['snippet'])
+            self.assertEqual(item['snippet'].splitlines(), [item['snippet']])
+
+    def test_phrase_respects_markdown_boundaries_and_casefold_offsets(self):
+        for name, body in [('blank', 'Straße\n \nname'), ('heading', '## Straße\nname'),
+                           ('list', 'Straße\n- name')]:
+            self.write(f'wiki/concepts/{name}.md', body)
+        text = '前' * 300 + ' Straße\r\n  name'
+        target = self.write('wiki/concepts/match.md', text)
+        result = json.loads(self.command('search_wiki.py', 'strasse name', 'strasse - name').stdout)
+        self.assertEqual([item['path'] for item in result['results']], ['wiki/concepts/match.md'])
+        item = result['results'][0]
+        self.assertIn('Straße name', item['snippet'])
+        self.assertEqual(item['line'], next(i for i, line in enumerate(target.read_text().splitlines(), 1)
+                                            if 'Straße' in line))
+
     def test_url_identity_prefers_resource_and_only_falls_back_when_missing(self):
         url = 'https://example.com/article'
         identity = source_identity({'resource': url}, self.kb)

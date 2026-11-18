@@ -28,7 +28,7 @@
 
 ## 初始化日志
 
-基础文件创建后，先按 `lint-policy.md` 的「写后检查」验证 index 与 overview；通过后追加 init 完成记录。
+基础文件创建后，先按 [SKILL.md 的共用写入收尾](../SKILL.md#共用写入收尾)验证 index 与 overview；通过后追加 init 完成记录。
 
 当月日志的首条记录使用：
 

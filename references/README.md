@@ -10,9 +10,9 @@
 - `okf-frontmatter.md`：字段语义与各类页面 profile。
 - `guardrails.md`：授权边界与环境异常处理；`preflight.md`：结构校验与参数解析。
 - 各 workflow 策略：只描述该任务特有的行为。
-- `lint-policy.md` 的「写后检查」：所有写入任务共用的索引维护、验证、修正和事务日志。
+- `SKILL.md` 的「共用写入收尾」：所有写入任务共用的索引维护、验证、修正和事务日志。
 - `provenance-policy.md`：论断证据与来源变化的传播协议；`query-policy.md`：搜索和分批读取。
-- `review-workflow.md`：证据候选导出、实际核对、记录填写与后续复用步骤，字段契约仍以来源策略为准。
+- `review-workflow.md`：证据分级、记录字段、候选导出、实际核对与后续复用的唯一规范；`scripts/review_quality.py` 提供负样本注入、分类统计与高待审量时的准入判断。
 - `synthesis-policy.md`：摄入主题检查、实体与概念建页门槛、暂缓候选与可恢复的增量复核与显式全库整理。
 - `scalability-policy.md`：出现容量问题时的治理选择；`golden-sample.md`：当前发布前回归；[维护历史](../docs/maintenance-history.md)：按需回查以往验证记录。
 

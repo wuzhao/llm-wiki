@@ -16,4 +16,4 @@ explore 目标：基于已有证据发现研究方向、知识缺口和跨主题
 
 ## 可选落盘
 
-用户明确要求保存时，按目的写入 `wiki/analyses/` 或 `wiki/hubs/`，无需再次要求回复确认。拆分、重命名和批量改链接遵循 `guardrails.md` 的确切目标授权；孤儿页只报告，删除执行 cleanup。写入后使用 `lint-policy.md` 的共用收尾。
+用户明确要求保存时，按目的写入 `wiki/analyses/` 或 `wiki/hubs/`，无需再次要求回复确认。拆分、重命名和批量改链接遵循 `guardrails.md` 的确切目标授权；孤儿页只报告，删除执行 cleanup。写入后使用 [SKILL.md 的共用写入收尾](../SKILL.md#共用写入收尾)。

@@ -9,8 +9,8 @@ tags: [analysis, tag1, tag2]
 generated: { by: "llm-wiki/{{SKILL_VERSION}}", at: YYYY-MM-DDTHH:MM:SSZ }
 status: stable
 # verified:
-#   - { by: human:<id>, at: YYYY-MM-DDTHH:MM:SSZ }
-# stale_after: YYYY-MM-DDTHH:MM:SSZ
+#   - { by: human:<id>, at: <实际核验 ISO 时间> }
+# stale_after: <过期 ISO 时间>
 sources:
   - { id: evidence-source, resource: <实际读取的来源相对路径> }
 ---

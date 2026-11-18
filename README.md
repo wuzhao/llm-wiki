@@ -215,6 +215,10 @@ ingest 根据来源身份与内容变化处理首次保存或版本更新；相�
 
 目录和字段见 [结构说明](references/schema.md)、[schema.json](references/schema.json)；Frontmatter 见 [OKF 0.2 profile](references/okf-frontmatter.md)。
 
+### 语言与结构字段
+
+知识库正文可以使用中文、英文或其他语言；当前策略与模板主要使用中文。使用其他语言撰写正文时，保留 schema 要求的小节名、index 分区名与 frontmatter 约定；修改这些结构标签属于 schema 变更。
+
 ### 使用边界
 
 - 素材提取：网页保留代码、链接和普通表格，复杂表格保留 HTML。抓取不执行 JavaScript、下载网页图片或解析 PDF 等二进制附件；必要时提供可用正文。
@@ -234,7 +238,8 @@ ingest 根据来源身份与内容变化处理首次保存或版本更新；相�
 | [前置检查](references/preflight.md) | 工作区、技能、知识库和工具路径 |
 | [来源与更新协议](references/provenance-policy.md) | 证据引用、来源版本与影响传播 |
 | [知识提炼策略](references/synthesis-policy.md) | 建页门槛、暂缓候选与增量复核 |
-| [检查与修复策略](references/lint-policy.md) | 写后检查与安全修复范围 |
+| [检查与修复策略](references/lint-policy.md) | 诊断、报告与安全修复范围 |
+| [复核工作流](references/review-workflow.md) | 证据分级、人工确认与 review_quality.py 负样本抽检 |
 | [templates/](templates/) | 页面模板 |
 | [AGENTS.md](AGENTS.md) | 项目开发约束 |
 | [Golden Sample](references/golden-sample.md) | 最小流程回归 |

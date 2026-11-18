@@ -6,17 +6,19 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from kb_fixture import ROOT, initialize_kb, page, snapshot
 from wiki_evidence import EvidenceIndex
 from wiki_lint_report import build_report
 from wiki_provenance import issue
+from wiki_metadata import split_frontmatter
 from wiki_reviews import annotate_reviews, load_reviews, metadata_evidence
 
 
 class ReviewTests(unittest.TestCase):
     def fixture(self):
-        state = SimpleNamespace(originals={'wiki/a.md': '只有一人成功', 'raw/a.md': 'one person succeeded',
+        state = SimpleNamespace(parse=split_frontmatter, originals={'wiki/a.md': '只有一人成功', 'raw/a.md': 'one person succeeded',
                                            'wiki/summary.md': '转述原文'}, errors={},
                                 documents={'raw/a.md': {'body': 'one person succeeded'}})
         findings = [('wiki/a.md', issue('🟡', '待复核', '', 1, category='evidence',
@@ -98,7 +100,9 @@ class ReviewTests(unittest.TestCase):
             with self.subTest(evidence=evidence):
                 record['evidence'] = [{'path': 'raw/a.md', **evidence}]
                 _, findings = self.fixture()
-                data, stale = annotate_reviews(findings, state, [record], 'rules-v1')
+                with patch('wiki_reviews.metadata_evidence', wraps=metadata_evidence) as lookup:
+                    data, stale = annotate_reviews(findings, state, [record], 'rules-v1')
+                lookup.assert_called_once()
                 self.assertEqual(stale, 0 if valid else 1)
                 self.assertEqual(data['records'][0]['status'], 'supported' if valid else 'pending')
         for content in ('---\nduration: 16\nduration: 17\n---\n',

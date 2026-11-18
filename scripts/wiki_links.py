@@ -3,11 +3,12 @@
 Markdown syntax parsing lives in markdown_links; diagnostics and repairs live
 in lint_wiki. This module only locates targets and same-root candidates.
 """
+import re
 import urllib.parse
 from collections import defaultdict
 from pathlib import Path
 
-from markdown_links import unescape_target
+from markdown_links import mask_non_prose, unescape_target
 from wiki_config import resolve_within
 from wiki_sources import walk_visible_files
 
@@ -158,3 +159,42 @@ def resolve_wikilink(source_relative, target_text, target_index, schema):
         "fragment": fragment if separator else "",
         "candidates": candidate_paths(decoded, target_index, root_name),
     }
+
+
+def heading_keys(filepath, content=None):
+    if not filepath or Path(filepath).suffix.casefold() != ".md":
+        return set(), set()
+    if content is None:
+        try:
+            content = Path(filepath).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return set(), set()
+    exact = set()
+    slugs = set()
+    content = mask_non_prose(content)
+    counts = defaultdict(int)
+    for match in re.finditer(r"^#{1,6}\s+(.+?)(?:\s+#+)?$", content, re.MULTILINE):
+        heading = match.group(1).strip()
+        exact.add(heading.casefold())
+        slug = re.sub(r"[^\w\-\u4e00-\u9fff ]", "", heading.casefold())
+        slug = re.sub(r"[\s\-]+", "-", slug).strip("-")
+        count = counts[slug]
+        counts[slug] += 1
+        slugs.add(f"{slug}-{count}" if count else slug)
+    blocks = set(re.findall(r"\^([A-Za-z0-9_-]+)\s*$", content, re.MULTILINE))
+    return exact | blocks, slugs
+
+
+def fragment_exists(relative_target, fragment, target_index):
+    if not fragment:
+        return True
+    filepath = target_index["by_relative"].get(relative_target)
+    if not filepath:
+        return False
+    cache = target_index["heading_cache"]
+    if relative_target not in cache:
+        content = target_index.get("content_cache", {}).get(relative_target)
+        cache[relative_target] = heading_keys(filepath, content)
+    exact, slugs = cache[relative_target]
+    normalized = fragment.lstrip("^").casefold()
+    return normalized in exact or normalized in slugs

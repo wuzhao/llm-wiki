@@ -24,6 +24,8 @@
 
 `synthesis_review_interval` 按摘要来源链可回查的不同 raw 正文内容累计，去重与检查点规则见 `synthesis-policy.md`。数量只触发增量检查点，不强制全库回扫，也不是建页门槛；阅读批次复用 `max_query_read_pages`。检查状态保存在摘要与事务日志中，不增加必需目录或独立状态文件。
 
+`max_review_false_support_pct` 为负样本抽检的最大误判支持百分比，允许 0 至 100 的整数；`review_weekly_admission_threshold` 为单周派生及近似类待审总量触发准入阀的阈值，须为正整数，严格超过才触发。两者均由 `scripts/review_quality.py` 读取，统计与使用规则见 [复核工作流](review-workflow.md#自动复核负样本抽检)。
+
 ## 路径职责
 
 - `raw`：原始素材层，包含素材正文与附件；素材页在 ingest 的新增与更新分支只追加，重复输入复用已有快照，历史正文始终只读，显式 `lint --fix` 仅可补齐可确定的 frontmatter 字段。

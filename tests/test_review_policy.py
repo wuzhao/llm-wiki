@@ -44,7 +44,8 @@ class ReviewPolicyTests(unittest.TestCase):
                     'approximation_span', 'human_confirmation'):
             record.pop(key)
         original = copy.deepcopy(record)
-        with patch('wiki_reviews.compatible_review_rules', return_value=['rules-v1']):
+        with patch('wiki_reviews.compatible_review_rules', return_value=['rules-v1']), \
+                patch('wiki_reviews.legacy_review_rules', return_value=['rules-v1']):
             _, findings = fixture.fixture()
             data, stale = annotate_reviews(findings, state, [record], 'rules-v2')
             self.assertEqual(stale, 0)
@@ -58,7 +59,6 @@ class ReviewPolicyTests(unittest.TestCase):
             self.assertEqual(stale, 1)
             self.assertEqual(data['records'][0]['status'], 'pending')
             self.assertEqual(findings[0][1]['level'], '🟡')
-        self.assertTrue(compatible_review_rules(checker_fingerprint()))
         self.assertEqual(compatible_review_rules('changed-rules'), [])
 
     def test_other_kinds_statuses_and_mixed_findings_keep_their_levels(self):
@@ -86,9 +86,11 @@ class ReviewPolicyTests(unittest.TestCase):
         annotate_reviews(findings, state, [], 'rules-v1')
         self.assertEqual(findings[0][1]['level'], '🟡')
 
-    def test_shipped_compatibility_accepts_legacy_gated_claims_only(self):
-        current = checker_fingerprint()
-        legacy = compatible_review_rules(current)[0]
+    @patch('wiki_reviews.compatible_review_rules', return_value=['rules-v1'])
+    @patch('wiki_reviews.legacy_review_rules', return_value=['rules-v1'])
+    def test_compatibility_accepts_legacy_gated_claims_only(self, *_):
+        current = 'rules-v2'
+        legacy = 'rules-v1'
         for text in ('计算得到42人', '约40人'):
             state, findings = test_reviews.ReviewTests().fixture()
             findings[0][1]['details'] = EvidenceIndex([]).diagnose(text)

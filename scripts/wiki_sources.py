@@ -1,4 +1,5 @@
 """Raw source identity, version selection, and safe read-only inventories."""
+import copy
 import datetime
 import hashlib
 import os
@@ -75,7 +76,7 @@ def walk_visible_files(root, errors=None, kb_dir=None, excluded_roots=()):
     return files
 
 
-def load_documents(kb_dir, roots, text_cache=None, scan_errors=None, excluded_roots=()):
+def load_documents(kb_dir, roots, text_cache=None, scan_errors=None, excluded_roots=(), parse_cache=None):
     base = Path(kb_dir).resolve()
     documents = {}
     errors = {}
@@ -97,7 +98,15 @@ def load_documents(kb_dir, roots, text_cache=None, scan_errors=None, excluded_ro
                 text = path.read_bytes().decode("utf-8")
                 if text_cache is not None:
                     text_cache[relative] = text
-                _, metadata, body, error = split_frontmatter(text)
+                if parse_cache is None:
+                    parsed = split_frontmatter(text)
+                else:
+                    if text not in parse_cache:
+                        parse_cache[text] = split_frontmatter(text)
+                    parsed = parse_cache[text]
+                _, metadata, body, error = parsed
+                if parse_cache is not None:
+                    metadata = copy.deepcopy(metadata)
                 if error and error != "缺少 YAML frontmatter":
                     errors[relative] = error
                     continue

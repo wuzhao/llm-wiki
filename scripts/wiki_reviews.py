@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from wiki_metadata import parse_datetime, split_frontmatter
+from wiki_rule_fingerprint import checker_fingerprint
 from wiki_review_policy import (REVIEW_FIELDS, REVIEW_POLICY, apply_review_severity,
                                 claim_category, validate_review_policy)
 
@@ -16,9 +17,9 @@ TEMPORAL_FIELDS = {'timestamp', 'published_at', 'published_date', 'publication_d
                    'duration_seconds', 'video_duration'}
 
 
-def metadata_evidence(content):
+def metadata_evidence(content, parse=split_frontmatter):
     """Expose explicit temporal scalar values, never index all YAML as prose."""
-    frontmatter, _, _, error = split_frontmatter(content)
+    frontmatter, _, _, error = parse(content)
     if error:
         return []
     node = yaml.compose(frontmatter)
@@ -30,7 +31,7 @@ def metadata_evidence(content):
             and value.tag not in ('tag:yaml.org,2002:null', 'tag:yaml.org,2002:bool')]
 
 
-def valid_evidence(evidence, finding, snapshot):
+def valid_evidence(evidence, finding, snapshot, metadata_cache):
     path = evidence['path']
     via = evidence.get('via')
     if via is not None:
@@ -40,7 +41,7 @@ def valid_evidence(evidence, finding, snapshot):
         return False
     if 'field' in evidence:
         return any(item['field'] == evidence['field'] and item['quote'] == evidence['quote']
-                   for item in metadata_evidence(snapshot.originals.get(path, '')))
+                   for item in metadata_cache[path])
     return evidence['quote'] in snapshot.documents.get(path, {}).get('body', '')
 
 
@@ -90,6 +91,11 @@ def compatible_review_rules(rules_fingerprint):
     return json.loads(path.read_text(encoding='utf-8')).get(rules_fingerprint, [])
 
 
+def legacy_review_rules():
+    path = Path(__file__).parent.parent / 'references/review-compatibility.json'
+    return json.loads(path.read_text(encoding='utf-8')).get('legacy_review_rules', [])
+
+
 def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
     """Bind each decision to the whole page, dependency chain and checker rules."""
     prior = {record['id']: record for record in records}
@@ -97,13 +103,14 @@ def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
     hashes = {path: digest(text) for path, text in snapshot.originals.items()}
     metadata_cache = {}
     compatible_rules = compatible_review_rules(rules_fingerprint)
+    legacy_rules = legacy_review_rules()
     for path, finding in all_issues:
         options = []
         routes = [(None, finding.get('sources', [])), *finding.get('cross_page_sources', {}).items()]
         for via, sources in routes:
             for source in sources:
                 if source not in metadata_cache:
-                    metadata_cache[source] = metadata_evidence(snapshot.originals.get(source, ''))
+                    metadata_cache[source] = metadata_evidence(snapshot.originals.get(source, ''), snapshot.parse)
                 options.extend({'path': source, **item, **({'via': via} if via else {})}
                                for item in metadata_cache[source])
         finding['metadata_evidence'] = options
@@ -133,20 +140,22 @@ def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
                     legacy_identity = {**identity, 'rules': rules}
                     legacy_key = digest(json.dumps(legacy_identity, ensure_ascii=False, sort_keys=True))
                     legacy = prior.get(legacy_key)
-                    if legacy and 'review_policy' not in legacy and legacy['status'] != 'pending':
+                    if legacy and legacy['status'] != 'pending':
                         old, identity, key = legacy, legacy_identity, legacy_key
                         break
             if old and complete and all(old.get(k) == v for k, v in identity.items()):
-                evidence_valid = all(valid_evidence(evidence, finding, snapshot)
+                evidence_valid = all(valid_evidence(evidence, finding, snapshot, metadata_cache)
                                      for evidence in old.get('evidence', []))
                 policy_valid = (old.get('review_policy') == REVIEW_POLICY and old.get('category') == category)
-                legacy_valid = 'review_policy' not in old and old['rules'] in compatible_rules
+                legacy_valid = ('review_policy' not in old and old['rules'] in compatible_rules
+                                and old['rules'] in legacy_rules)
                 if (policy_valid or legacy_valid) and (old['status'] == 'pending' or evidence_valid):
                     validate_review_policy(old)
                     if legacy_valid:
                         record = {**old, 'evidence_options': record['evidence_options']}
                     else:
-                        record.update({k: old.get(k, record[k]) for k in REVIEW_FIELDS})
+                        record.update(id=key, rules=identity['rules'])
+                        record.update({field: old.get(field, record[field]) for field in REVIEW_FIELDS})
                     used.add(key)
             detail['review_id'] = record['id']
             detail['review_category'] = category
@@ -156,12 +165,3 @@ def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
         apply_review_severity(finding)
     stale = sum(record['status'] != 'pending' and record['id'] not in used for record in records)
     return {'version': 1, 'records': list(exported.values())}, stale
-
-
-def checker_fingerprint():
-    root = Path(__file__).parent
-    return digest(''.join((root / name).read_text(encoding='utf-8') for name in
-                         ('wiki_numbers.py', 'wiki_evidence.py', 'wiki_provenance.py', 'wiki_reviews.py', 'lint_wiki.py',
-                          'markdown_links.py', 'wiki_links.py', 'wiki_sources.py', 'wiki_metadata.py',
-                          'wiki_config.py', 'wiki_fragments.py', 'wiki_review_policy.py')) +
-                  (root.parent / 'references/schema.json').read_text(encoding='utf-8'))
