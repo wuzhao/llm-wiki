@@ -2,7 +2,7 @@
 import re
 
 from wiki_metadata import parse_datetime
-from wiki_numbers import quantities
+from wiki_numbers import WIDTH, quantities
 from wiki_provenance import PROCESSED_CLAIM
 
 
@@ -17,6 +17,15 @@ DERIVATION = re.compile(
     r'|\b(?:calculated|derived|estimated|sum|average|ratio|rounded)\b', re.I)
 
 
+# Unsupported quantity keys can still carry an explicit approximation marker.
+DURATION_NUMBER = r"(?:半|[零〇一二两三四五六七八九十百千万0-9]+[多余]?)"
+DURATION_UNIT = r"(?:年|个月|天|整天|小时|分钟|毫秒|秒)"
+APPROX_DURATION = re.compile(
+    rf"(?:大约|大概|约为|约){DURATION_NUMBER}{DURATION_UNIT}(?:左右|上下)?"
+    rf"|{DURATION_NUMBER}{DURATION_UNIT}(?:左右|上下)"
+    rf"|[零〇一二两三四五六七八九十百千万0-9]+[余多]{DURATION_UNIT}")
+
+
 def claim_category(detail):
     """Use the full attributed segment; derived takes precedence over approximate."""
     context = detail.get('review_context', detail['context'])
@@ -26,7 +35,8 @@ def claim_category(detail):
         return 'derived'
     values = quantities(detail['claim'])
     if (detail['kind'] == 'approximation-difference'
-            or any(value.key and value.key[0] in ('approx', 'near') for value in values)):
+            or any(value.key and value.key[0] in ('approx', 'near') for value in values)
+            or APPROX_DURATION.fullmatch(re.sub(r'\s+', '', detail['claim'].translate(WIDTH)))):
         return 'approximate'
     return 'direct'
 

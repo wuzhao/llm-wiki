@@ -25,6 +25,8 @@ class ReviewPolicyTests(unittest.TestCase):
             ('计算得到42人', 'derived'), ('合计42人', 'derived'),
             ('20 + 22 = 42人', 'derived'), ('换算后约42人', 'derived'),
             ('约42人', 'approximate'), ('近42人', 'approximate'),
+            ('十余年', 'approximate'), ('约半年', 'approximate'), ('半年左右', 'approximate'),
+            ('估算得到十余年', 'derived'), ('十小时', 'direct'), ('半年', 'direct'),
             ('大约16秒', 'approximate'), ('四五十人', 'approximate'),
         ):
             with self.subTest(text=text):

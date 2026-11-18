@@ -45,9 +45,24 @@ def quoted_literals(text):
     return values
 
 
+# Exclude only phrases functioning as discourse markers or source descriptions.
+# Match at the quantity offset so qualified, negated and larger counts survive.
+DISCOURSE_COUNT = re.compile(
+    r"(?:^|[。！？，：])[ \t]*(?:换(?P<kind>一种)说法|举(?P<example>一个)例子|打(?P<analogy>一个)比方)"
+    r"(?=[，：。,:]|$)", re.M)
+SECONDARY_SOURCE = re.compile(
+    r"(?:^[ \t#*+-]*|[的。：，])[ \t]*(二次)(?=转述|解读)", re.M)
+
+
+def claim_quantities(text):
+    exempt = {match.span(match.lastgroup) for match in DISCOURSE_COUNT.finditer(text)}
+    exempt.update(match.span(1) for match in SECONDARY_SOURCE.finditer(text))
+    return (value for value in quantities(text) if (value.start, value.end) not in exempt)
+
+
 def claim_literals(text):
     text = claim_text(text)
-    return {value.literal for value in quantities(text)} | quoted_literals(text)
+    return {value.literal for value in claim_quantities(text)} | quoted_literals(text)
 
 
 def excerpt(text, start, end):
@@ -128,14 +143,14 @@ class EvidenceIndex:
 
     def missing(self, text):
         text = claim_text(text)
-        missing = {value.literal for value in quantities(text) if not self.contains(value)}
+        missing = {value.literal for value in claim_quantities(text) if not self.contains(value)}
         return sorted(missing | {value for value in quoted_literals(text)
                                  if not any(value in document.body for document in self.documents)})
 
     def diagnose(self, text):
         normalized = claim_text(text)
         details = {}
-        for value in quantities(normalized):
+        for value in claim_quantities(normalized):
             if self.contains(value) or value.literal in details:
                 continue
             candidates = []

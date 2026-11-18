@@ -266,6 +266,17 @@ class NumericEvidenceTests(unittest.TestCase):
         self.assertEqual(missing_literals('1条', '每一条输入'), ['1条'])
         self.assertEqual(missing_literals('3元', '三元组'), ['3元'])
 
+    def test_discourse_counts_and_secondary_sources_are_claim_side_only(self):
+        for text in ('换一种说法：效率变高了', '举一个例子，平均值会变。', '打一个比方。',
+                     '原文的二次转述', '- **二次解读与原著核验**'):
+            with self.subTest(text=text):
+                self.assertEqual(claim_literals(text), set())
+                self.assertEqual(missing_literals(text, ''), [])
+        for text in ('只举一个例子', '举一个例子就够', '开展二次转述', '第三次失败', '按一人照护五人估计'):
+            self.assertTrue(missing_literals(text, ''))
+        self.assertEqual(missing_literals('2次', '原文的二次转述'), [])
+        self.assertIn('换一种说法', missing_literals('原文说：「换一种说法」', ''))
+
     def test_complete_calendar_dates_match_across_languages(self):
         for value in ('2026年6月7日', '2026 年 6 月 7 日', '二〇二六年六月七日',
                       '二零二六年六月七号', 'June 7, 2026', 'Jun. 7, 2026', 'June 7,2026',
