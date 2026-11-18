@@ -277,6 +277,37 @@ class NumericEvidenceTests(unittest.TestCase):
         self.assertEqual(missing_literals('2次', '原文的二次转述'), [])
         self.assertIn('换一种说法', missing_literals('原文说：「换一种说法」', ''))
 
+    def test_abstract_predicates_exempt_only_the_article_on_the_claim_side(self):
+        from wiki_evidence import EvidenceIndex
+        index = EvidenceIndex([])
+        for phrase in ('这构成一个悖论：修复反而带来负担。', '记忆是一种对未来的预测。',
+                       '等待是一种虚幻的借口。', '这是报道的二次访谈转述。'):
+            self.assertEqual(claim_literals(phrase), set())
+            self.assertEqual(index.missing(phrase), [])
+            self.assertEqual(index.diagnose(phrase), [])
+        for phrase in ('结果恰好是一种预测。', '仅是一种预测。', '最多只能是一种预测。', '是一种预测，而不是两种。',
+                       '模型输出一种预测。', '每轮是一种预测模型。', '开展二次访谈转述。',
+                       '作者提出三个迷思。', '每次测试施加一条规则。'):
+            self.assertTrue(index.diagnose(phrase), phrase)
+        self.assertIn('一种', claim_literals('是一种预测，而不是两种。'))
+        self.assertEqual(claim_literals('这构成一个悖论：每次施加一条规则。'), {'一条'})
+        self.assertIn('记忆是一种预测。', index.missing('原文说：「记忆是一种预测。」'))
+        self.assertEqual(missing_literals('1种', '记忆是一种预测。'), [])
+
+    def test_selectors_and_singular_definitions_keep_real_counts(self):
+        for phrase in ('调研到哪一家厂商', '受访者自述为一位工程师。',
+                       '这是一项普遍规律。', 'Loop 本质上是一个递归目标系统。',
+                       'Acme 是一家专注于工程的科技公司。', 'A-Bench 是一个衡量推理能力的基准。'):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(claim_literals(phrase), set())
+                self.assertEqual(missing_literals(phrase, ''), [])
+        for phrase in ('两家大客户', '最终只选出一家', '每次运行分配一个文件夹',
+                       '也许这仅是一项普遍规律。', '作者自称一位也没见过。',
+                       'Acme 是一家专注于工程的科技公司，而不是两家。'):
+            self.assertTrue(missing_literals(phrase, ''), phrase)
+        self.assertEqual(claim_literals('受访者自述为一位从业十余年的工程师。'), {'十余年'})
+        self.assertIn('1家', missing_literals('哪一家最终只选出1家', ''))
+
     def test_complete_calendar_dates_match_across_languages(self):
         for value in ('2026年6月7日', '2026 年 6 月 7 日', '二〇二六年六月七日',
                       '二零二六年六月七号', 'June 7, 2026', 'Jun. 7, 2026', 'June 7,2026',

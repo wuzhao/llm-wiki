@@ -50,12 +50,35 @@ def quoted_literals(text):
 DISCOURSE_COUNT = re.compile(
     r"(?:^|[。！？，：])[ \t]*(?:换(?P<kind>一种)说法|举(?P<example>一个)例子|打(?P<analogy>一个)比方)"
     r"(?=[，：。,:]|$)", re.M)
+# Singular classifiers in figurative or definitional predicates often act as
+# articles. Limit this to named abstract nouns and clause boundaries.
+PREDICATE_END = r"(?=[。；：！？]|，(?![ \t]*(?:而非|而不|不是|而是|并非|并不是|[两二][种项个家]))|$)"
+ABSTRACT_PREDICATE = re.compile(
+    r"(?:是(?P<classifier>一种)(?:[\u4e00-\u9fff]{1,6}的)?(?:预测|比喻|隐喻|类比|手段|借口)"
+    r"|是(?P<law>一项)普遍规律"
+    r"|本质上是(?P<system>一个)[\u4e00-\u9fff]{0,8}系统"
+    r"|(?:这|那)(?:就)?构成(?:了)?(?P<paradox>一个)悖论)"
+    + PREDICATE_END)
+COUNT_FOCUS = re.compile(r"(?:只|仅|仅仅|单单|恰好|正好|恰|总共|一共|分别|最多|最少|至少|至多|不|并非|而非)(?:能|可能)?$")
 SECONDARY_SOURCE = re.compile(
-    r"(?:^[ \t#*+-]*|[的。：，])[ \t]*(二次)(?=转述|解读)", re.M)
+    r"(?:^[ \t#*+-]*|[的。：，])[ \t]*(二次)(?=转述|解读|访谈转述)", re.M)
+
+# These introductions identify a referent. Restrict entity definitions to a
+# named subject at the beginning of a sentence, so totals keep their counts.
+REFERENT = re.compile(
+    r"哪[ \t]*(?P<which>一[个种项条人位家次])"
+    r"|(?:讲述者|受访者|演讲者|作者)(?:自称是|自述为)(?P<speaker>一位)"
+    r"|(?:^|[。！？])[ \t]*[A-Z][A-Za-z0-9.-]*(?:[ \t]+[A-Z][A-Za-z0-9.-]*)*[ \t]*是"
+    r"(?:(?P<company>一家)专注于[^。，；：！？\n]{1,48}的(?:科技)?公司|(?P<benchmark>一个)衡量[^。，；：！？\n]{1,48}的基准)"
+    + PREDICATE_END, re.M)
 
 
 def claim_quantities(text):
     exempt = {match.span(match.lastgroup) for match in DISCOURSE_COUNT.finditer(text)}
+    for match in ABSTRACT_PREDICATE.finditer(text):
+        if not COUNT_FOCUS.search(text[:match.start()].rstrip()):
+            exempt.add(match.span(match.lastgroup))
+    exempt.update(match.span(match.lastgroup) for match in REFERENT.finditer(text))
     exempt.update(match.span(1) for match in SECONDARY_SOURCE.finditer(text))
     return (value for value in quantities(text) if (value.start, value.end) not in exempt)
 
