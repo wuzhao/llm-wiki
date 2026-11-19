@@ -6,6 +6,7 @@ import re
 import sys
 from pathlib import Path
 
+from markdown_links import code_comment_spans
 from wiki_config import SchemaError, is_knowledge_page, load_schema, validate_structure
 from wiki_provenance import prose_blocks
 from wiki_sources import load_documents
@@ -36,6 +37,32 @@ def first_term_span(text, terms):
         offset = end
 
 
+def searchable_blocks(body):
+    start = 0
+    for left, right, kind in code_comment_spans(body):
+        if kind == "code":
+            continue
+        yield from prose_blocks(body[start:left], start)
+        if kind == "fence":
+            yield left, body[left:right]
+        start = right
+    yield from prose_blocks(body[start:], start)
+
+
+def match_snippet(text, span, limit):
+    start, end = span
+    left = text.rfind("\n", 0, start) + 1
+    right = text.find("\n", end)
+    prefix = " ".join(text[left:start].split())
+    if prefix and text[start - 1].isspace():
+        prefix += " "
+    matched = " ".join(text[start:end].split())
+    line = " ".join(text[left:right if right >= 0 else len(text)].split())
+    # Centre on the original hit; keep the whole phrase when it fits.
+    offset = max(0, len(prefix) - max(0, limit - len(matched)) // 2)
+    return line[offset:offset + limit].rstrip()
+
+
 def search_documents(documents, terms, schema, document_type=None, tag=None, domain=None):
     terms = {normalize_term(term) for term in terms if normalize_term(term)}
     expanded = set(terms)
@@ -62,30 +89,22 @@ def search_documents(documents, terms, schema, document_type=None, tag=None, dom
         metadata_text = normalize_term(metadata_original)
         body = document["body"]
         matched_body = set()
-        span = None
-        for offset, block in prose_blocks(body):
+        line_index = None
+        snippet_limit = schema["limits"]["max_search_snippet_chars"]
+        for offset, block in searchable_blocks(body):
             normalized = normalize_term(block)
             found = {term for term in expanded if term in normalized}
-            if found and span is None:
-                start, end = first_term_span(block, found)
-                span = offset + start, offset + end
+            if found and line_index is None:
+                span = first_term_span(block, found)
+                line_index = body.count("\n", 0, offset + span[0])
+                snippet = match_snippet(block, span, snippet_limit)
             matched_body.update(found)
         matched_metadata = {term for term in expanded if term in metadata_text}
         matched = matched_body | matched_metadata
         if not matched:
             continue
-        if span is not None:
-            line_index = body.count("\n", 0, span[0])
-            left = body.rfind("\n", 0, span[0]) + 1
-            right = body.find("\n", span[1])
-            snippet = " ".join(body[left:right if right >= 0 else len(body)].split())
-        else:
-            line_index, snippet = None, metadata_original
-        snippet_limit = schema["limits"]["max_search_snippet_chars"]
-        snippet_span = first_term_span(snippet, matched)
-        first_match = snippet_span[0] if snippet_span else 0
-        start = max(0, first_match - snippet_limit // 2)
-        snippet = snippet[start:start + snippet_limit]
+        if line_index is None:
+            snippet = match_snippet(metadata_original, first_term_span(metadata_original, matched_metadata), snippet_limit)
         results.append({"path": path, "title": title, "type": metadata.get("type"), "status": metadata.get("status", "stable"),
                         "matched_terms": sorted(matched), "match_kind": [kind for kind, matches in (("metadata", matched_metadata), ("body", matched_body)) if matches],
                         "line": document.get("body_start_line", 1) + line_index if line_index is not None else 1,

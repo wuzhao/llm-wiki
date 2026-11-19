@@ -37,7 +37,7 @@ from wiki_lint_report import build_report
 from wiki_reviews import annotate_reviews, checker_fingerprint, load_reviews
 from markdown_links import mask_non_prose, standard_link_occurrences, standard_link_spans, wikilink_spans, unescape_target
 from wiki_links import build_target_index, fragment_exists, is_allowed_target, resolve_standard_link, resolve_wikilink
-from wiki_metadata import body_sha256, parse_datetime, split_frontmatter
+from wiki_metadata import FRONTMATTER_RE, body_sha256, parse_datetime, split_frontmatter
 from wiki_sources import latest_sources, source_identity, walk_visible_files
 from synthesis_wiki import review_fingerprint, validate_synthesis
 from wiki_provenance import check_provenance
@@ -66,17 +66,39 @@ def yaml_scalar(value):
 
 
 def set_frontmatter_value(frontmatter, key, value):
-    replacement = f"{key}: {yaml_scalar(value)}"
+    """Replace only a safely identifiable value. None means manual repair."""
+    scalar = yaml_scalar(value)
     node = yaml.compose(frontmatter)
     if isinstance(node, yaml.MappingNode):
         for key_node, value_node in node.value:
             if key_node.value == key:
-                start, end = key_node.start_mark.index, value_node.end_mark.index
-                suffix = "\n" if frontmatter[start:end].endswith("\n") else ""
-                return frontmatter[:start] + replacement + suffix + frontmatter[end:]
+                start, end = value_node.start_mark.index, value_node.end_mark.index
+                old = frontmatter[start:end]
+                # PyYAML resolves aliases to the defining node. Compound values
+                # can also contain comments or anchors that have no Python value.
+                if start < key_node.end_mark.index or old.startswith(("&", "*", "!")):
+                    return None
+                if isinstance(value_node, yaml.ScalarNode):
+                    if value_node.style in ("|", ">") and "#" in old.splitlines()[0]:
+                        return None
+                elif not value_node.flow_style or any(c in old for c in "#&*!"):
+                    return None
+                if node.flow_style:
+                    scalar = json.dumps(value, ensure_ascii=False)
+                if not old:
+                    if frontmatter[start - 1:start] == ":":
+                        scalar = " " + scalar
+                    elif node.flow_style and start == key_node.end_mark.index:
+                        scalar = ": " + scalar
+                    else:
+                        return None
+                trailing = re.search(r"(?:\r?\n[ \t]*)+\Z", old)
+                return frontmatter[:start] + scalar + (trailing[0] if trailing else "") + frontmatter[end:]
+        if node.flow_style:
+            return None
     if frontmatter and not frontmatter.endswith("\n"):
-        frontmatter += "\n"
-    return frontmatter + replacement
+        frontmatter += "\r\n" if "\r\n" in frontmatter else "\n"
+    return frontmatter + f"{key}: {scalar}"
 
 
 def h1_title(body, filepath):
@@ -93,23 +115,26 @@ def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=Fal
     metadata = metadata.copy()
     issues = []
 
+    def repair_field(key, value, level, problem):
+        nonlocal frontmatter, content
+        proposed = set_frontmatter_value(frontmatter, key, value)
+        if proposed is None:
+            issues.append(make_issue(level, problem, "修复会破坏 YAML 引用或可能丢失注释，请人工补全", line=1))
+            return
+        if apply_fixes:
+            start, end = FRONTMATTER_RE.match(content).span("frontmatter")
+            content = content[:start] + proposed + content[end:]
+        frontmatter = proposed
+        metadata[key] = value
+        issues.append(make_issue(level, problem, f"补全 {key} 为 {value}", line=1, is_auto=True))
+
     if relative_path == schema["paths"]["index"]:
         if error:
             issues.append(make_issue("🔴", error, "按 index 模板补充 okf_version", line=1))
             return content, issues, metadata, body
         expected_version = schema["okf_version"]
         if metadata.get("okf_version") != expected_version:
-            frontmatter = set_frontmatter_value(frontmatter, "okf_version", expected_version)
-            metadata["okf_version"] = expected_version
-            issues.append(make_issue(
-                "🔴",
-                f"index 的 okf_version 不是 {expected_version}",
-                f"补全 okf_version 为 {expected_version}",
-                line=1,
-                is_auto=True,
-            ))
-            if apply_fixes:
-                content = f"---\n{frontmatter.rstrip()}\n---\n{body}"
+            repair_field("okf_version", expected_version, "🔴", f"index 的 okf_version 不是 {expected_version}")
         extra_keys = sorted(set(metadata) - {"okf_version"})
         if extra_keys:
             issues.append(make_issue(
@@ -146,14 +171,10 @@ def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=Fal
             make_issue("🔵", "Frontmatter 缺少 title", f"补全 title 为 {metadata['title']}", line=1, is_auto=True),
         ])
     else:
-        changed = False
         current_type = metadata.get("type")
         if not isinstance(current_type, str) or not current_type.strip():
             if inferred_type:
-                frontmatter = set_frontmatter_value(frontmatter, "type", inferred_type)
-                metadata["type"] = inferred_type
-                changed = True
-                issues.append(make_issue("🔴", "Frontmatter 缺少非空 type", f"补全 type 为 {inferred_type}", line=1, is_auto=True))
+                repair_field("type", inferred_type, "🔴", "Frontmatter 缺少非空 type")
             else:
                 issues.append(make_issue("🔴", "Frontmatter 缺少非空 type", "无法从目录推断，请人工补充", line=1))
         elif inferred_type and current_type != inferred_type:
@@ -166,13 +187,7 @@ def check_and_fix_frontmatter(filepath, content, kb_dir, schema, apply_fixes=Fal
 
         if not isinstance(metadata.get("title"), str) or not metadata.get("title", "").strip():
             title = h1_title(body, filepath)
-            frontmatter = set_frontmatter_value(frontmatter, "title", title)
-            metadata["title"] = title
-            changed = True
-            issues.append(make_issue("🔵", "Frontmatter 缺少 title", f"补全 title 为 {title}", line=1, is_auto=True))
-
-        if changed and apply_fixes:
-            content = f"---\n{frontmatter.rstrip()}\n---\n{body}"
+            repair_field("title", title, "🔵", "Frontmatter 缺少 title")
 
     is_raw = relative_path.startswith(f"{schema['paths']['raw']}/")
     is_log = relative_path.startswith(f"{schema['paths']['logs']}/")

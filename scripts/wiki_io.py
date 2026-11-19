@@ -60,10 +60,17 @@ def atomic_write_text(path, content):
 def create_unique_text(directory, base_name, content):
     """Reserve the destination exclusively; never overwrite an existing raw file."""
     directory = Path(directory)
+    name_max = os.pathconf(directory, "PC_NAME_MAX")
+    byte_limit = min(255, name_max) if name_max > 0 else 255
+    stem = base_name.encode("utf-8")
     counter = 1
     while True:
-        suffix = "" if counter == 1 else f"-{counter}"
-        path = directory / f"{base_name}{suffix}.md"
+        suffix = ".md" if counter == 1 else f"-{counter}.md"
+        budget = byte_limit - len(suffix)
+        if budget <= 0:
+            raise ValueError("文件系统名称长度不足以容纳重名后缀")
+        name = stem[:budget].decode("utf-8", errors="ignore")
+        path = directory / (name + suffix)
         try:
             output = path.open("x", encoding="utf-8")
         except FileExistsError:

@@ -14,6 +14,30 @@ SCRIPT = ROOT / "scripts" / "ingest_raw.py"
 
 
 class IngestRawTests(unittest.TestCase):
+    def test_long_multiline_html_title_preserves_display_title_and_unique_files(self):
+        from wiki_metadata import split_frontmatter
+        with tempfile.TemporaryDirectory() as directory:
+            kb = initialize_kb(directory)
+            prefix = "长标题" * 40
+            paths = []
+            for tail in ("甲", "乙"):
+                html = f"<title>资料:\n\t{prefix}\x7f{tail}</title><p>正文{tail}</p>"
+                url = "data:text/html;charset=utf-8," + urllib.parse.quote(html)
+                result = self.run_ingest(kb, "--url", url)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(len(result.stdout.splitlines()), 1)
+                path = Path(result.stdout.strip())
+                self.assertLessEqual(len(path.name.encode("utf-8")), 255)
+                self.assertNotIn(":", path.name)
+                metadata = split_frontmatter(path.read_text())[1]
+                self.assertEqual(metadata["title"], f"资料: {prefix} {tail}")
+                paths.append((path, path.read_bytes()))
+            self.assertTrue(paths[1][0].name.endswith("-2.md"))
+            retry = self.run_ingest(kb, "--url", url)
+            self.assertEqual(retry.stdout, result.stdout)
+            for path, original in paths:
+                self.assertEqual(path.read_bytes(), original)
+
     def test_kb_relocation_reuses_relative_file_and_preserves_identity(self):
         from wiki_metadata import split_frontmatter
         with tempfile.TemporaryDirectory() as directory:

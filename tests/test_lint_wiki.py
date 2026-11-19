@@ -576,6 +576,40 @@ class LintWikiTests(unittest.TestCase):
         self.assertEqual(metadata["custom"], {"nested": [1, 2]})
         self.assertEqual(metadata["title"], "alpha")
 
+    def test_frontmatter_fix_preserves_comments_around_multiline_empty_values(self):
+        path = self.kb / "raw/alpha.md"
+        original = ('\ufeff---\r\n"type": # 类型说明\r\n  # 采集时留空\r\n  \'\' # 待补\r\n'
+                    'title: # 从正文获取\r\n# 保留末尾空格  \r\n---\r\n# alpha\r\n')
+        path.write_bytes(original.encode())
+        result = self.run_lint("--fix")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = original.replace("  ''", "  source-material").replace("title: #", "title: alpha #")
+        self.assertEqual(path.read_bytes(), expected.encode())
+
+    def test_fix_leaves_commented_block_scalar_for_manual_repair(self):
+        path = self.kb / "raw/alpha.md"
+        original = "---\ntype: source-material\ntitle: |- # keep this comment\n\n---\n# alpha\n"
+        path.write_text(original)
+        result = self.run_lint("--fix")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("请人工补全", result.stdout)
+        self.assertEqual(path.read_text(), original)
+
+    def test_fix_handles_yaml_keys_without_a_value_separator(self):
+        path = self.kb / "raw/alpha.md"
+        for header in ("{type, title}", "? type\n# keep\n? title"):
+            with self.subTest(header=header):
+                original = f"---\n{header}\n---\n# alpha\n"
+                path.write_text(original)
+                result = self.run_lint("--fix")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if header.startswith("{"):
+                    self.assertEqual(split_frontmatter(path.read_text())[1],
+                                     {"type": "source-material", "title": "alpha"})
+                else:
+                    self.assertIn("请人工补全", result.stdout)
+                    self.assertEqual(path.read_text(), original)
+
     def test_fix_preserves_code_and_link_attributes_and_resolves_references(self):
         self.write_concept("alpha")
         code = '~~~md\n[[wrong/alpha]]\n~~~\n\n````md\n```\n[[wrong/alpha]]\n```\n````\n\n`[[wrong/alpha]]`'

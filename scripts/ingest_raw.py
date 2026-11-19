@@ -26,8 +26,11 @@ from wiki_metadata import body_sha256, content_sha256
 from wiki_sources import document_content_hash, raw_inventory, source_identity, source_locator
 
 
+def normalize_title(title):
+    return re.sub(r"[\s\x00-\x1f\x7f-\x9f]+", " ", title).strip()
+
+
 def clean_filename(title):
-    # Remove invalid characters from filename
     return re.sub(r'[\\/*?:"<>|]', "", title).strip()
 
 
@@ -176,7 +179,8 @@ def main():
     parser.add_argument("--attachment", help="Existing raw/assets path for the original attachment of extracted text")
     
     args = parser.parse_args()
-    if args.text is not None and not (args.title or "").strip():
+    title = normalize_title(args.title or "")
+    if args.text is not None and not title:
         parser.error("使用 --text 时必须同时提供 --title")
     if args.source_id is not None and not args.source_id.strip():
         parser.error("--source-id 必须是非空来源身份")
@@ -209,7 +213,6 @@ def main():
             parser.error(f"原始附件无效: {exc}")
         
     content = ""
-    title = args.title or ""
     source_file_path = ""
     source_file_sha256 = ""
     capture = {}
@@ -238,13 +241,10 @@ def main():
     if len(content.encode("utf-8")) > schema["limits"]["max_source_bytes"]:
         parser.error("素材正文超过 max_source_bytes")
         
-    if not title:
-        title = "Untitled Material"
+    title = normalize_title(title) or "Untitled Material"
 
     today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
-    clean_title = clean_filename(title)
-    if not clean_title:
-        clean_title = "Untitled"
+    clean_title = clean_filename(title) or "Untitled"
         
     base_name = f"{today_str} - {clean_title}"
     

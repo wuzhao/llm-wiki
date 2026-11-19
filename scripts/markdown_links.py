@@ -10,12 +10,10 @@ def blank(text):
     return "".join("\n" if c == "\n" else " " for c in text)
 
 
-def mask_non_prose(content):
-    """Mask syntax in context; comment markers inside code are literal text."""
-    text = re.sub(r"\A\ufeff?---\r?\n.*?\r?\n---(?:\r?\n|$)",
-                  lambda m: blank(m.group()), content, count=1, flags=re.S)
-    edits = []
+def code_comment_spans(text):
+    """Yield original offsets. Comment delimiters inside code are literal."""
     fence = None
+    fence_start = 0
     position = 0
     while position < len(text):
         if position == 0 or text[position - 1] == "\n":
@@ -28,15 +26,18 @@ def mask_non_prose(content):
                 if fence:
                     if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
                         fence = None
+                        yield fence_start, end, "fence"
                 elif marker:
                     fence = (marker[1][0], len(marker[1]))
-                edits.append((position, end))
+                    fence_start = position
+                else:
+                    yield position, end, "code"
                 position = end
                 continue
         if text.startswith("<!--", position) and not escaped(text, position):
             end = text.find("-->", position + 4)
             end = len(text) if end < 0 else end + 3
-            edits.append((position, end))
+            yield position, end, "comment"
             position = end
             continue
         if text[position] == "`" and not escaped(text, position):
@@ -48,15 +49,23 @@ def mask_non_prose(content):
             closing = re.search(r"(?<!`)" + re.escape(opening) + r"(?!`)", text[start:end])
             if closing:
                 end = start + closing.end()
-                edits.append((position, end))
+                yield position, end, "code"
                 position = end
                 continue
             position = start
             continue
         position += 1
+    if fence:
+        yield fence_start, len(text), "fence"
+
+
+def mask_non_prose(content):
+    """Mask syntax in context; comment markers inside code are literal text."""
+    text = re.sub(r"\A\ufeff?---\r?\n.*?\r?\n---(?:\r?\n|$)",
+                  lambda m: blank(m.group()), content, count=1, flags=re.S)
     chunks = []
     previous = 0
-    for start, end in edits:
+    for start, end, _ in code_comment_spans(text):
         chunks.extend((text[previous:start], blank(text[start:end])))
         previous = end
     chunks.append(text[previous:])

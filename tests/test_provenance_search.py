@@ -73,6 +73,30 @@ class ProvenanceSearchTests(unittest.TestCase):
         self.assertEqual(item['line'], next(i for i, line in enumerate(target.read_text().splitlines(), 1)
                                             if 'Straße' in line))
 
+    def test_search_skips_comments_and_centres_on_the_visible_phrase(self):
+        body = ('left <!-- hiddenonly\nother --> right\n\n'
+                '<!-- meta -->' + ' 前缀 ' * 250 + 'Straße\n  NAME <!-- trailing -->')
+        target = self.write('wiki/concepts/meta.md', body)
+        results = json.loads(self.command('search_wiki.py', 'hiddenonly', 'left right').stdout)
+        self.assertEqual(results['total'], 0)
+        item, = json.loads(self.command('search_wiki.py', 'meta', 'strasse name').stdout)['results']
+        self.assertEqual(item['match_kind'], ['metadata', 'body'])
+        self.assertIn('Straße NAME', item['snippet'])
+        self.assertNotIn('trailing', item['snippet'])
+        self.assertEqual(item['line'], next(i for i, line in enumerate(target.read_text().splitlines(), 1)
+                                            if 'Straße' in line))
+
+    def test_search_keeps_literal_comments_and_line_breaks_in_code(self):
+        self.write('wiki/concepts/code.md',
+                   '`<!-- inlinesample -->`\n\n    <!-- indentsample -->\n\n'
+                   '~~~sh\n# instruction\n\n<!-- fencesample -->\n~~~\n'
+                   '\\<!-- escapedsample -->\n<!-- unfinished hiddenonly')
+        for term in ('inlinesample', 'indentsample', 'instruction <!-- fencesample', 'escapedsample'):
+            with self.subTest(term=term):
+                item, = json.loads(self.command('search_wiki.py', term).stdout)['results']
+                self.assertIn(term, item['snippet'])
+        self.assertEqual(json.loads(self.command('search_wiki.py', 'hiddenonly').stdout)['total'], 0)
+
     def test_url_identity_prefers_resource_and_only_falls_back_when_missing(self):
         url = 'https://example.com/article'
         identity = source_identity({'resource': url}, self.kb)
