@@ -7,7 +7,6 @@ from wiki_provenance import PROCESSED_CLAIM
 
 
 REVIEW_POLICY = 2
-UNLOCATED_KINDS = {'not-found', 'quote-not-found'}
 CATEGORIES = {'direct', 'derived', 'approximate'}
 REVIEW_FIELDS = ('status', 'reason', 'reviewer', 'reviewed_at', 'evidence',
                  'source_values', 'derivation', 'approximation_span', 'human_confirmation')
@@ -72,12 +71,18 @@ def review_completed(detail):
 
 
 def apply_review_severity(finding):
-    """Only supported unlocated claims change level; mixed issues keep the maximum."""
+    """Lower a warning only when every bound review qualifies for a downgrade."""
     details = finding.get('details', [])
     if finding.get('category') != 'evidence' or not details:
         return
+    # Keep the diagnostic levels so re-annotation after a stale review restores them.
+    original = finding.setdefault('diagnostic_level', finding['level'])
+    all_eligible = True
     for detail in details:
-        if detail['kind'] in UNLOCATED_KINDS:
-            detail['level'] = '🔵' if detail.get('review', {}).get('status') == 'supported' else '🟡'
-    if finding['level'] != '🔴':
-        finding['level'] = max((d['level'] for d in details), key={'🔵': 0, '🟡': 1, '🔴': 2}.get)
+        base = detail.setdefault('diagnostic_level', detail['level'])
+        eligible = review_completed(detail) and (
+            detail['review_category'] == 'direct' or detail['review'].get('human_confirmation'))
+        detail['level'] = '🔵' if eligible and base == '🟡' else base
+        if not eligible:
+            all_eligible = False
+    finding['level'] = '🔵' if all_eligible and original == '🟡' else original

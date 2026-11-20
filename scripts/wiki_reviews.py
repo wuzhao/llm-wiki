@@ -161,6 +161,10 @@ def annotate_reviews(all_issues, snapshot, records, rules_fingerprint):
             detail['review_category'] = category
             if record['status'] != 'pending':
                 detail['review'] = {k: record.get(k) for k in REVIEW_FIELDS}
+                # Only policy v2 validates human_confirmation. A legacy record
+                # cannot acquire downgrade eligibility by adding an unchecked field.
+                if 'review_policy' not in record:
+                    detail['review']['human_confirmation'] = None
             exported[record['id']] = record
         apply_review_severity(finding)
     stale = sum(record['status'] != 'pending' and record['id'] not in used for record in records)

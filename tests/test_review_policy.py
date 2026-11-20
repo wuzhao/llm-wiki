@@ -63,30 +63,65 @@ class ReviewPolicyTests(unittest.TestCase):
             self.assertEqual(findings[0][1]['level'], '🟡')
         self.assertEqual(compatible_review_rules('changed-rules'), [])
 
-    def test_other_kinds_statuses_and_mixed_findings_keep_their_levels(self):
+    def test_terminal_reviews_lower_direct_warnings_across_diagnostics(self):
         fixture = test_reviews.ReviewTests()
-        for kind, status in (('unit-difference', 'supported'), ('not-found', 'non-quantity'),
-                             ('not-found', 'author-structure')):
-            state, findings = fixture.fixture()
-            findings[0][1]['details'][0]['kind'] = kind
-            data, _ = annotate_reviews(findings, state, [], 'rules-v1')
-            record = data['records'][0]
-            _, approved = fixture.approved()
-            record.update({k: approved[k] for k in ('reason', 'reviewer', 'reviewed_at', 'evidence')})
-            record['status'] = status
-            annotate_reviews(findings, state, [record], 'rules-v1')
-            self.assertEqual(findings[0][1]['level'], '🟡')
+        _, approved = fixture.approved()
+        for kind in ('unit-difference', 'qualifier-difference', 'predicate-count', 'translated-count',
+                     'year-abbreviation', 'not-found', 'quote-not-found'):
+            for status in ('supported', 'non-quantity', 'author-structure'):
+                with self.subTest(kind=kind, status=status):
+                    state, findings = fixture.fixture()
+                    findings[0][1]['details'][0]['kind'] = kind
+                    data, _ = annotate_reviews(findings, state, [], 'rules-v1')
+                    record = data['records'][0]
+                    record.update({k: approved[k] for k in ('reason', 'reviewer', 'reviewed_at')})
+                    record.update(status=status, evidence=approved['evidence'] if status == 'supported' else [])
+                    annotate_reviews(findings, state, [record], 'rules-v1')
+                    self.assertEqual(findings[0][1]['level'], '🔵')
+                    state.originals['wiki/a.md'] += ' changed'
+                    _, stale = annotate_reviews(findings, state, [record], 'rules-v1')
+                    self.assertEqual(stale, 1)
+                    self.assertEqual(findings[0][1]['level'], '🟡')
+
+    def test_mixed_warning_waits_even_for_an_originally_blue_candidate(self):
+        fixture = test_reviews.ReviewTests()
         state, findings = fixture.fixture()
-        findings[0][1]['details'] += EvidenceIndex([]).diagnose('原文说：「未找到的引文」')
+        details = findings[0][1]['details']
+        details.append(EvidenceIndex.detail('42人', 'unit-missing', '共有42人', 2, 5, []))
+        _, approved = fixture.approved()
         data, _ = annotate_reviews(findings, state, [], 'rules-v1')
         for record in data['records']:
             record.update({k: approved[k] for k in ('status', 'reason', 'reviewer', 'reviewed_at', 'evidence')})
+        data['records'][0].update(status='non-quantity', evidence=[])
         annotate_reviews(findings, state, data['records'][:1], 'rules-v1')
+        self.assertEqual([d['level'] for d in details], ['🔵', '🔵'])
         self.assertEqual(findings[0][1]['level'], '🟡')
         annotate_reviews(findings, state, data['records'], 'rules-v1')
         self.assertEqual(findings[0][1]['level'], '🔵')
         annotate_reviews(findings, state, [], 'rules-v1')
         self.assertEqual(findings[0][1]['level'], '🟡')
+        self.assertEqual([d['level'] for d in details], ['🟡', '🔵'])
+
+    def test_gated_non_quantity_and_author_structure_require_confirmation_to_downgrade(self):
+        fixture = test_reviews.ReviewTests()
+        _, approved = fixture.approved()
+        for text in ('合计42人', '约40人'):
+            for status in ('non-quantity', 'author-structure'):
+                with self.subTest(text=text, status=status):
+                    state, findings = fixture.fixture()
+                    findings[0][1]['details'] = EvidenceIndex([]).diagnose(text)
+                    data, _ = annotate_reviews(findings, state, [], 'rules-v1')
+                    record = data['records'][0]
+                    record.update({k: approved[k] for k in ('reason', 'reviewer', 'reviewed_at')})
+                    record['status'] = status
+                    annotate_reviews(findings, state, [record], 'rules-v1')
+                    report = build_report(findings, 1)
+                    self.assertEqual(report.severity_counts['🟡'], 1)
+                    self.assertIn('仍待复核 0 个', report.text)
+                    self.assertIn('降级仍需人工确认', report.text)
+                    record['human_confirmation'] = {'reviewer': 'Phan', 'confirmed_at': approved['reviewed_at']}
+                    annotate_reviews(findings, state, [record], 'rules-v1')
+                    self.assertEqual(findings[0][1]['level'], '🔵')
 
     @patch('wiki_reviews.compatible_review_rules', return_value=['rules-v1'])
     @patch('wiki_reviews.legacy_review_rules', return_value=['rules-v1'])
@@ -105,8 +140,12 @@ class ReviewPolicyTests(unittest.TestCase):
             record.update({k: approved[k] for k in ('status', 'reason', 'reviewer', 'reviewed_at', 'evidence')})
             data, stale = annotate_reviews(findings, state, [record], current)
             self.assertEqual(stale, 0)
-            self.assertEqual(findings[0][1]['level'], '🔵')
+            self.assertEqual(findings[0][1]['level'], '🟡')
+            self.assertIn('仍待复核 0 个', build_report(findings, 1).text)
             self.assertEqual(data['records'][0]['id'], record['id'])
+            record['human_confirmation'] = {'reviewer': 'unchecked'}
+            annotate_reviews(findings, state, [record], current)
+            self.assertEqual(findings[0][1]['level'], '🟡')
             record['status'] = 'pending'
             data, _ = annotate_reviews(findings, state, [record], current)
             self.assertEqual(data['records'][0]['review_policy'], 2)

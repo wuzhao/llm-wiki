@@ -125,6 +125,8 @@ def format_report_item(relative_path, issue, action_label="修改建议"):
                 confirmation = review['human_confirmation']
                 item += (f"\n    人工确认：{inline_text(confirmation['reviewer'])}，"
                          f"{inline_text(confirmation['confirmed_at'])}")
+            elif detail.get('review_category') in ('derived', 'approximate') and review_completed(detail):
+                item += "\n    降级仍需人工确认，此终局记录缺少 human_confirmation。"
         for candidate in detail["candidates"]:
             item += (f"\n    - 原文候选 {inline_text(candidate['literal'])}，"
                      f"{format_issue_location(candidate['path'], candidate['line'])}，列 {candidate['column']}："
@@ -149,7 +151,7 @@ def review_groups(all_issues):
     pending_groups = sum(any(not review_completed(d) for _, d in rows) for rows in groups.values())
     result = (f'### Agent 复核工作台\n\n{total} 个主张按同页、同表达、同诊断与同来源范围合为 {len(groups)} 组；'
               f'其中 {pending_groups} 组待复核，{reviewed} 个主张已有有效复核记录。'
-              '分组不代表同一事实，需核对组内每处语境；原始告警数不变，有效 supported 未定位主张降为蓝色。\n\n'
+              '分组不代表同一事实，需核对组内每处语境；原始告警数不变。\n\n'
               'Agent 先核对泛指、作者自编结构、翻译候选与已有记录；只有证据缺口、冲突或需要用户取舍的内容进入用户决策清单。\n\n')
     for (path, claim, kind, sources, routes), rows in groups.items():
         pending = any(not review_completed(d) for _, d in rows)
@@ -168,7 +170,7 @@ def format_categories(items, level=None):
         selected = [item for kind, item in items if kind == category]
         if selected:
             if category == "evidence" and level == "🔵":
-                title = "证据表达建议与已复核未定位主张"
+                title = "证据表达建议与已复核主张"
             result += f"\n#### {title} ({len(selected)})\n\n" + "\n".join(selected) + "\n"
     return result
 
@@ -230,11 +232,11 @@ def build_report(all_issues, checked, write_enabled=False, dry_run=False, *, fix
         report += f" / 可自动修复 {len(auto_fixed)}（未写入）\n\n" if show_repairs else "\n\n"
     report += f"🔴 严重: {severity_counts['🔴']} 个（需要立刻解决）\n"
     report += f"🟡 中等: {severity_counts['🟡']} 个（建议补充完善）\n"
-    report += f"🔵 轻微: {severity_counts['🔵']} 个（建议或已复核未定位主张）\n\n"
+    report += f"🔵 轻微: {severity_counts['🔵']} 个（建议或已复核主张）\n\n"
     total, reviewed, completed = review_counts(all_issues)
     report += (f'证据主张 {total} 个：已有有效复核记录 {reviewed} 个，仍待复核 {total - reviewed} 个。\n'
                f'原始告警 {len(all_issues)} 条，其中 {completed} 条证据告警的所有候选均已复核；'
-               '部分复核与提议仍计入待办，其他类别须另行处理。有效 supported 未定位主张降为蓝色，退出码按调整后的级别计算。\n\n')
+               '部分复核与提议仍计入待办，其他类别须另行处理。黄色证据告警须全部主张有效结案，派生和近似主张须有人工确认，才降为蓝色。退出码按调整后的级别计算。\n\n')
     unresolved = ({level for level, items in manual.items() if items} if write_enabled
                   else {issue['level'] for _, issue in all_issues})
     if not details:
